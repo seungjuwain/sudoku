@@ -6,18 +6,26 @@ st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="centered")
 SYMBOLS = "123456789ABCDEFG"
 
 # ---------------------------------------------------------
-# CSS: 둥근 모서리 완전 제거 & 직선 격자 표(Table) 스타일 적용
+# CSS: 구역(Box) 단위 흰색 배경 및 직선 테두리 적용
 # ---------------------------------------------------------
 st.markdown("""
 <style>
-/* 전체 컨테이너 너비 및 중앙 정렬 */
 .block-container {
-    max-width: 550px !important;
+    max-width: 500px !important;
     padding-top: 1.5rem !important;
     padding-bottom: 2rem !important;
 }
 
-/* Streamlit 레이아웃 여백/간격 완전 제거 */
+/* 3x3 구역 컨테이너: 흰색 바탕 + 검은색 굵은 실선 테두리 */
+.sudoku-box {
+    background-color: #ffffff !important;
+    border: 2px solid #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* Streamlit 레이아웃 간격 제거 */
 div[data-testid="stHorizontalBlock"] {
     gap: 0px !important;
     margin: 0 !important;
@@ -39,20 +47,18 @@ div[data-testid="stTextInput"] label {
     display: none !important;
 }
 
-/* 
- * 핵심: 둥근 모서리(border-radius: 0) 제거 및 셀 1:1 직각 정사각형 구현 
- */
+/* 셀 내부 입력창: 회색 실선 구분 + 흰색 배경 + 직각 모서리 */
 div[data-testid="stTextInput"] input {
     text-align: center !important;
     font-size: 20px !important;
     font-weight: bold !important;
-    aspect-ratio: 1 / 1 !important; /* 1:1 완벽한 정사각형 */
+    aspect-ratio: 1 / 1 !important;
     height: 100% !important;
     width: 100% !important;
     padding: 0 !important;
     margin: 0 !important;
-    border-radius: 0px !important; /* 둥근 모서리 강제 제거 */
-    border: 1px solid #b0b0b0 !important; /* 기본 회색 실선 */
+    border-radius: 0px !important;
+    border: 1px solid #d0d0d0 !important; /* 내부 회색 실선 */
     background-color: #ffffff !important;
     color: #111111 !important;
     box-sizing: border-box !important;
@@ -62,31 +68,18 @@ div[data-testid="stTextInput"] input {
 div[data-testid="stTextInput"] input:focus {
     border: 2px solid #2878d0 !important;
     outline: none !important;
-    box-shadow: none !important;
 }
 
 div[data-testid="stTextInput"] input:disabled {
-    background-color: #f0f2f5 !important;
+    background-color: #f2f4f7 !important;
     color: #000000 !important;
     font-weight: 900 !important;
-    border-radius: 0px !important;
 }
 
-/* 3x3 / 4x4 박스 구역 - 검은색 굵은 실선 */
-.grid-cell {
-    width: 100%;
-    box-sizing: border-box;
-}
-.b-top { border-top: 3px solid #000000 !important; }
-.b-bottom { border-bottom: 3px solid #000000 !important; }
-.b-left { border-left: 3px solid #000000 !important; }
-.b-right { border-right: 3px solid #000000 !important; }
-
-/* 버튼 스타일 */
 .stButton > button {
     border-radius: 6px;
     font-weight: 600;
-    margin-top: 8px;
+    margin-top: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -239,32 +232,28 @@ def set_board(board, n):
 def draw_board(n, box, fixed=None):
     fixed = fixed or set()
 
-    for r in range(n):
-        cols = st.columns(n)
-        for c in range(n):
-            key = f"cell_{n}_{r}_{c}"
-            
-            # 구역 테두리 (3x3 또는 4x4 경계선은 검은색 굵은 실선)
-            border_classes = ["grid-cell"]
-            if r % box == 0:
-                border_classes.append("b-top")
-            if r == n - 1:
-                border_classes.append("b-bottom")
-            if c % box == 0:
-                border_classes.append("b-left")
-            if c == n - 1:
-                border_classes.append("b-right")
-            
-            cls_str = " ".join(border_classes)
+    # 3x3 (또는 4x4) 박스 단위로 큰 구역 상자를 만듭니다.
+    num_boxes = n // box
+    for br in range(num_boxes):
+        box_cols = st.columns(num_boxes)
+        for bc in range(num_boxes):
+            with box_cols[bc]:
+                # 3x3 흰 바탕 & 검은 실선 구역
+                st.markdown('<div class="sudoku-box">', unsafe_allow_html=True)
+                for lr in range(box):
+                    cell_cols = st.columns(box)
+                    for lc in range(box):
+                        r = br * box + lr
+                        c = bc * box + lc
+                        key = f"cell_{n}_{r}_{c}"
 
-            with cols[c]:
-                st.markdown(f'<div class="{cls_str}">', unsafe_allow_html=True)
-                st.text_input(
-                    f"{r}-{c}",
-                    key=key,
-                    max_chars=1,
-                    disabled=(r, c) in fixed,
-                )
+                        with cell_cols[lc]:
+                            st.text_input(
+                                f"{r}-{c}",
+                                key=key,
+                                max_chars=1,
+                                disabled=(r, c) in fixed,
+                            )
                 st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -425,3 +414,4 @@ else:
 
             if st.session_state.get("puzzle_message"):
                 st.info(st.session_state.puzzle_message)
+                
