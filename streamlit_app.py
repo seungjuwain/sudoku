@@ -21,7 +21,7 @@ div[data-testid="stSelectbox"] > label {
     font-weight: 600;
 }
 
-/* 스도쿠 입력 칸 */
+/* 스도쿠 격자 공통 설정 */
 div[data-testid="stTextInput"] {
     margin: 0 !important;
     padding: 0 !important;
@@ -32,25 +32,42 @@ div[data-testid="stTextInput"] label {
 div[data-testid="stTextInput"] input {
     text-align: center !important;
     font-size: 20px !important;
-    font-weight: 500 !important;
-    min-height: 44px !important;
-    padding: 4px 0 !important;
+    font-weight: 600 !important;
+    min-height: 48px !important;
+    height: 48px !important;
+    padding: 0 !important;
     border-radius: 0 !important;
-    border: 1px solid #b8c2cc !important;
+    border: 1px solid #c0c0c0 !important;
     background: white !important;
     color: #172b4d !important;
+    box-sizing: border-box !important;
 }
 div[data-testid="stTextInput"] input:focus {
     border: 2px solid #2878d0 !important;
     box-shadow: none !important;
+    z-index: 10 !important;
 }
 
-/* 입력 칸 주변 간격 */
+/* 입력 칸 간격 제거 */
 div[data-testid="stHorizontalBlock"] {
     gap: 0 !important;
 }
 div[data-testid="stVerticalBlock"] {
-    gap: 0.25rem;
+    gap: 0 !important;
+}
+
+/* 박스 구역(3x3 또는 4x4) 외곽선 스타일링 (검은 실선) */
+.box-border-top {
+    border-top: 2px solid #000000 !important;
+}
+.box-border-bottom {
+    border-bottom: 2px solid #000000 !important;
+}
+.box-border-left {
+    border-left: 2px solid #000000 !important;
+}
+.box-border-right {
+    border-right: 2px solid #000000 !important;
 }
 
 /* 버튼 */
@@ -58,6 +75,7 @@ div[data-testid="stVerticalBlock"] {
     min-height: 44px;
     border-radius: 8px;
     font-weight: 600;
+    margin-top: 8px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -203,26 +221,40 @@ def read_board(n):
 
 def draw_board(n, box, fixed=None):
     fixed = fixed or set()
-    symbols = SYMBOLS[:n]
 
-    for box_row in range(0, n, box):
-        for local_row in range(box):
-            cols = st.columns(n, gap=None)
-            for box_col in range(0, n, box):
-                for local_col in range(box):
-                    r = box_row + local_row
-                    c = box_col + local_col
-                    key = f"cell_{n}_{r}_{c}"
+    for r in range(n):
+        cols = st.columns(n, gap=None)
+        for c in range(n):
+            key = f"cell_{n}_{r}_{c}"
+            
+            # 3x3 (또는 4x4) 구역 테두리 계산
+            border_classes = []
+            if r % box == 0:
+                border_classes.append("box-border-top")
+            if r == n - 1:
+                border_classes.append("box-border-bottom")
+            if c % box == 0:
+                border_classes.append("box-border-left")
+            if c == n - 1:
+                border_classes.append("box-border-right")
+            
+            css_class = " ".join(border_classes)
 
-                    with cols[c]:
-                        st.text_input(
-                            f"{r + 1}-{c + 1}",
-                            key=key,
-                            max_chars=1,
-                            label_visibility="collapsed",
-                            placeholder="·",
-                            disabled=(r, c) in fixed,
-                        )
+            with cols[c]:
+                if css_class:
+                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
+                
+                st.text_input(
+                    f"{r + 1}-{c + 1}",
+                    key=key,
+                    max_chars=1,
+                    label_visibility="collapsed",
+                    placeholder="·",
+                    disabled=(r, c) in fixed,
+                )
+                
+                if css_class:
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def set_board(board, n):
@@ -264,7 +296,7 @@ def board_errors(board, n, box):
             seen = set()
             for r in range(br, br + box):
                 for c in range(bc, bc + box):
-                    value = board[rr if 'rr' in locals() else r][cc if 'cc' in locals() else c]
+                    value = board[r][c]
                     if value == "":
                         continue
                     if value in seen:
@@ -324,8 +356,8 @@ else:
             st.rerun()
 
         st.info(
-            "빈칸에 숫자를 입력하세요. 9×9는 1~9, "
-            "16×16은 1~9와 A~G를 사용합니다."
+            "빈칸에 숫자를 입력하세요. 9×9는 1-9, "
+            "16×16은 1-9와 A-G를 사용합니다."
         )
         draw_board(n, box)
 
