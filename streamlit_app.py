@@ -7,21 +7,14 @@ SYMBOLS = "123456789ABCDEFG"
 
 st.markdown("""
 <style>
-/* 전체 화면 */
+/* 전체 화면 배치 */
 .block-container {
-    max-width: 1100px;
+    max-width: 900px;
     padding-top: 2rem;
     padding-bottom: 3rem;
 }
-h1, h2, h3 {
-    letter-spacing: -0.5px;
-}
-div[data-testid="stRadio"] > label,
-div[data-testid="stSelectbox"] > label {
-    font-weight: 600;
-}
 
-/* 스도쿠 격자 공통 설정 */
+/* 스도쿠 보드 컨테이너 (정사각형 유지 및 회색/검은색 실선 설정) */
 div[data-testid="stTextInput"] {
     margin: 0 !important;
     padding: 0 !important;
@@ -32,23 +25,25 @@ div[data-testid="stTextInput"] label {
 div[data-testid="stTextInput"] input {
     text-align: center !important;
     font-size: 20px !important;
-    font-weight: 600 !important;
-    min-height: 48px !important;
-    height: 48px !important;
+    font-weight: 700 !important;
+    aspect-ratio: 1 / 1 !important; /* 완벽한 정사각형 유지 */
+    width: 100% !important;
+    height: 100% !important;
     padding: 0 !important;
     border-radius: 0 !important;
-    border: 1px solid #c0c0c0 !important;
+    border: 1px solid #d0d0d0 !important; /* 기본 회색 실선 */
     background: white !important;
-    color: #172b4d !important;
+    color: #111111 !important;
     box-sizing: border-box !important;
 }
+
 div[data-testid="stTextInput"] input:focus {
     border: 2px solid #2878d0 !important;
     box-shadow: none !important;
     z-index: 10 !important;
 }
 
-/* 입력 칸 간격 제거 */
+/* 입력 칸 간격 완벽 제거 */
 div[data-testid="stHorizontalBlock"] {
     gap: 0 !important;
 }
@@ -56,26 +51,26 @@ div[data-testid="stVerticalBlock"] {
     gap: 0 !important;
 }
 
-/* 박스 구역(3x3 또는 4x4) 외곽선 스타일링 (검은 실선) */
+/* 3x3 / 4x4 구역 검은색 굵은 실선 */
 .box-border-top {
-    border-top: 2px solid #000000 !important;
+    border-top: 3px solid #000000 !important;
 }
 .box-border-bottom {
-    border-bottom: 2px solid #000000 !important;
+    border-bottom: 3px solid #000000 !important;
 }
 .box-border-left {
-    border-left: 2px solid #000000 !important;
+    border-left: 3px solid #000000 !important;
 }
 .box-border-right {
-    border-right: 2px solid #000000 !important;
+    border-right: 3px solid #000000 !important;
 }
 
-/* 버튼 */
+/* 버튼 스타일 */
 .stButton > button {
     min-height: 44px;
     border-radius: 8px;
     font-weight: 600;
-    margin-top: 8px;
+    margin-top: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -227,7 +222,7 @@ def draw_board(n, box, fixed=None):
         for c in range(n):
             key = f"cell_{n}_{r}_{c}"
             
-            # 3x3 (또는 4x4) 구역 테두리 계산
+            # 구역 경계선(검은 실선) 클래스 부여
             border_classes = []
             if r % box == 0:
                 border_classes.append("box-border-top")
