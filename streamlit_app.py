@@ -1,4 +1,3 @@
-```python
 import random
 import streamlit as st
 
@@ -206,7 +205,6 @@ def draw_board(n, box, fixed=None):
     fixed = fixed or set()
     symbols = SYMBOLS[:n]
 
-    # 3×3 또는 4×4 박스 단위로 구성해 경계가 눈에 띄게 표시됩니다.
     for box_row in range(0, n, box):
         for local_row in range(box):
             cols = st.columns(n, gap=None)
@@ -266,7 +264,7 @@ def board_errors(board, n, box):
             seen = set()
             for r in range(br, br + box):
                 for c in range(bc, bc + box):
-                    value = board[r][c]
+                    value = board[rr if 'rr' in locals() else r][cc if 'cc' in locals() else c]
                     if value == "":
                         continue
                     if value in seen:
@@ -396,4 +394,3 @@ else:
 
             if st.session_state.get("puzzle_message"):
                 st.info(st.session_state.puzzle_message)
-```
