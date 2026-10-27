@@ -142,87 +142,52 @@ def set_board(board, n):
         for c in range(n):
             st.session_state[f"cell_{n}_{r}_{c}"] = board[r][c]
 
-def render_sudoku_board(n, box, fixed=None):
+def render_sudoku_table(n, box, fixed=None):
     fixed = fixed or set()
-    cell_size = 50 if n == 9 else 34
-    
-    # 순수 HTML/CSS 구현
-    html_code = f"""
-    <style>
-        .sudoku-table {{
-            border-collapse: collapse;
-            margin: 0 auto;
-            border: 3px solid #000000;
-            background-color: #ffffff;
-        }}
-        .sudoku-table td {{
-            width: {cell_size}px;
-            height: {cell_size}px;
-            padding: 0;
-            margin: 0;
-            border: 1px solid #c0c0c0; /* 회색 실선 */
-            text-align: center;
-        }}
-        /* 3x3 / 4x4 구역 검은색 굵은 실선 */
-        .border-top {{ border-top: 3px solid #000000 !important; }}
-        .border-left {{ border-left: 3px solid #000000 !important; }}
-        
-        .sudoku-input {{
-            width: 100%;
-            height: 100%;
-            border: none;
-            text-align: center;
-            font-size: {22 if n == 9 else 16}px;
-            font-weight: bold;
-            color: #111111;
-            background: transparent;
-            outline: none;
-            box-sizing: border-box;
-            text-transform: uppercase;
-        }}
-        .sudoku-input:focus {{
-            background-color: #e8f4fe;
-        }}
-        .sudoku-input:disabled {{
-            background-color: #f0f2f5;
-            color: #000000;
-            font-weight: 800;
-        }}
-    </style>
-    
-    <table class="sudoku-table">
-    """
-    
+    cell_size = 48 if n == 9 else 32
+    board_size = cell_size * n + 8
+
+    # HTML/CSS로 그려지는 직선 표
+    table_rows = ""
     for r in range(n):
-        html_code += "<tr>"
+        table_rows += "<tr>"
         for c in range(n):
-            top_class = "border-top" if (r % box == 0 and r != 0) else ""
-            left_class = "border-left" if (c % box == 0 and c != 0) else ""
-            is_disabled = "disabled" if (r, c) in fixed else ""
-            
+            top = "border-top: 3px solid #000;" if (r % box == 0 and r != 0) else ""
+            left = "border-left: 3px solid #000;" if (c % box == 0 and c != 0) else ""
             val = st.session_state.get(f"cell_{n}_{r}_{c}", "")
+            is_fixed = (r, c) in fixed
             
-            html_code += f"""
-            <td class="{top_class} {left_class}">
-                <input type="text" 
-                       class="sudoku-input" 
-                       maxlength="1" 
-                       value="{val}" 
-                       {is_disabled}
-                       oninput="window.parent.postMessage({{type: 'streamlit:setComponentValue', key: 'cell_{n}_{r}_{c}', value: this.value.toUpperCase()}}, '*')"
-                       id="input_{r}_{c}">
+            dis_attr = "disabled" if is_fixed else ""
+            bg_color = "#e8e8e8" if is_fixed else "#ffffff"
+
+            table_rows += f"""
+            <td style="{top} {left} width: {cell_size}px; height: {cell_size}px; padding: 0; margin: 0; border: 1px solid #b0b0b0; text-align: center;">
+                <input type="text" maxlength="1" value="{val}" {dis_attr}
+                       id="cell_{r}_{c}"
+                       style="width: 100%; height: 100%; border: none; outline: none; text-align: center; font-size: {22 if n == 9 else 15}px; font-weight: bold; background: {bg_color}; color: #000; border-radius: 0;"
+                       oninput="this.value = this.value.toUpperCase(); parent.postMessage({{type: 'sudoku_change', r: {r}, c: {c}, val: this.value}}, '*');">
             </td>
             """
-        html_code += "</tr>"
-    html_code += "</table>"
-    
-    # 폼 입력을 Streamlit st.text_input 컴포넌트 방식으로 깔끔하게 대체
-    for r in range(n):
-        cols = st.columns(n, gap=None)
-        for c in range(n):
-            key = f"cell_{n}_{r}_{c}"
-            if key not in st.session_state:
-                st.session_state[key] = ""
+        table_rows += "</tr>"
+
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+        body {{ margin: 0; padding: 0; display: flex; justify-content: center; background: transparent; }}
+        table {{ border-collapse: collapse; border: 3px solid #000; background: #fff; width: {board_size}px; height: {board_size}px; table-layout: fixed; }}
+    </style>
+    </head>
+    <body>
+        <table>
+            {table_rows}
+        </table>
+    </body>
+    </html>
+    """
+
+    components.html(html_code, height=board_size + 20)
 
 def board_errors(board, n, box):
     errors = []
@@ -267,68 +232,11 @@ def board_errors(board, n, box):
 
     return list(dict.fromkeys(errors))
 
-
 if "mode" not in st.session_state:
     st.session_state.mode = "처음 화면"
 
 st.title("🔢 스도쿠")
 st.caption("숫자를 입력하고, 규칙에 맞는 해답을 찾아보세요.")
-
-# CSS 레벨에서 레이아웃 강제 교정
-st.markdown("""
-<style>
-div[data-testid="column"] {
-    padding: 0 !important;
-    min-width: 0 !important;
-}
-div[data-testid="stHorizontalBlock"] {
-    gap: 0px !important;
-}
-div[data-testid="stTextInput"] input {
-    aspect-ratio: 1 / 1 !important;
-    height: auto !important;
-    min-height: 0 !important;
-    text-align: center !important;
-    font-size: 20px !important;
-    font-weight: bold !important;
-    border-radius: 0 !important;
-    border: 1px solid #c0c0c0 !important;
-    padding: 0 !important;
-}
-div[data-testid="stTextInput"] label { display: none !important; }
-
-/* 굵은 경계선 설정 */
-.b-top { border-top: 3px solid #000000 !important; }
-.b-bottom { border-bottom: 3px solid #000000 !important; }
-.b-left { border-left: 3px solid #000000 !important; }
-.b-right { border-right: 3px solid #000000 !important; }
-</style>
-""", unsafe_allow_html=True)
-
-def draw_clean_board(n, box, fixed=None):
-    fixed = fixed or set()
-    for r in range(n):
-        cols = st.columns(n, gap=None)
-        for c in range(n):
-            key = f"cell_{n}_{r}_{c}"
-            classes = []
-            if r % box == 0: classes.append("b-top")
-            if r == n - 1: classes.append("b-bottom")
-            if c % box == 0: classes.append("b-left")
-            if c == n - 1: classes.append("b-right")
-            
-            cls_str = " ".join(classes)
-            with cols[c]:
-                if cls_str:
-                    st.markdown(f'<div class="{cls_str}">', unsafe_allow_html=True)
-                st.text_input(
-                    f"{r}-{c}",
-                    key=key,
-                    max_chars=1,
-                    disabled=(r, c) in fixed
-                )
-                if cls_str:
-                    st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.mode == "처음 화면":
     st.write("원하시는 기능을 선택해 주세요.")
@@ -372,8 +280,16 @@ else:
 
         st.info("빈칸에 숫자를 입력하세요. 9×9는 1-9, 16×16은 1-9와 A-G를 사용합니다.")
         
-        # 보드 출력
-        draw_clean_board(n, box)
+        # 폼 입력값을 세션 상태와 동기화받기 위한 텍스트 입력 수단
+        with st.expander("직접 값 수정/확인", expanded=False):
+            for r in range(n):
+                cols = st.columns(n)
+                for c in range(n):
+                    key = f"cell_{n}_{r}_{c}"
+                    with cols[c]:
+                        st.text_input(f"{r}-{c}", key=key, max_chars=1)
+
+        render_sudoku_table(n, box)
 
         if st.button("완료 — 풀이하기", type="primary", use_container_width=True):
             board = read_board(n)
@@ -420,7 +336,7 @@ else:
         if "puzzle" in st.session_state:
             st.write("빈칸에 숫자를 입력해 문제를 풀어보세요.")
             
-            draw_clean_board(9, 3, st.session_state.puzzle_fixed)
+            render_sudoku_table(9, 3, st.session_state.puzzle_fixed)
 
             left, right = st.columns(2)
             with left:
