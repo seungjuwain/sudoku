@@ -6,18 +6,18 @@ st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="centered")
 SYMBOLS = "123456789ABCDEFG"
 
 # ---------------------------------------------------------
-# CSS: Streamlit 기본 스타일 전면 강제 오버라이드
+# CSS: Streamlit의 BaseWeb Input 테두리 및 모서리 완벽 제거
 # ---------------------------------------------------------
 st.markdown("""
 <style>
-/* 1. 전체 보드 폭 고정 */
+/* 1. 전체 컨테이너 너비 고정 */
 .block-container {
-    max-width: 520px !important;
+    max-width: 500px !important;
     padding-top: 1.5rem !important;
     padding-bottom: 2rem !important;
 }
 
-/* 2. Streamlit 컬럼 및 블록 사이 여백/간격 0으로 강제 초기화 */
+/* 2. 레이아웃 간격 0으로 초기화 */
 div[data-testid="stHorizontalBlock"] {
     gap: 0px !important;
     margin: 0px !important;
@@ -39,7 +39,17 @@ div[data-testid="stTextInput"] label {
     display: none !important;
 }
 
-/* 3. 입력창 정사각형 & 둥근 모서리 완전 제거 & 회색 실선 기본 적용 */
+/* 3. BaseWeb(Streamlit 내부 입력창 프레임) 둥근 모서리 및 배경 강제 제거 */
+div[data-baseweb="input"] {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0px !important;
+    box-shadow: none !important;
+    padding: 0px !important;
+    min-height: 0px !important;
+}
+
+/* 4. 실제 <input> 태그 직각 정사각형 고정 및 회색 실선 기본 적용 */
 div[data-testid="stTextInput"] input {
     text-align: center !important;
     font-size: 20px !important;
@@ -49,18 +59,19 @@ div[data-testid="stTextInput"] input {
     width: 100% !important;
     padding: 0px !important;
     margin: 0px !important;
-    border-radius: 0px !important; /* 둥근 모양 완벽 제거 */
+    border-radius: 0px !important; /* 둥근 모서리 완전 제거 */
     border: 1px solid #b0b0b0 !important; /* 내부 회색 실선 */
     background-color: #ffffff !important;
     color: #000000 !important;
     box-sizing: border-box !important;
     box-shadow: none !important;
+    outline: none !important;
 }
 
-/* 포커스 및 비활성화 상태 */
+/* 포커스 및 비활성화 스타일 */
 div[data-testid="stTextInput"] input:focus {
     border: 2px solid #1a73e8 !important;
-    outline: none !important;
+    z-index: 5 !important;
 }
 
 div[data-testid="stTextInput"] input:disabled {
@@ -69,7 +80,7 @@ div[data-testid="stTextInput"] input:disabled {
     font-weight: 900 !important;
 }
 
-/* 4. 3x3 (또는 4x4) 구역 구분을 위한 검은색 굵은 실선 클래스 */
+/* 5. 3x3 (또는 4x4) 구역 구분을 위한 검은색 굵은 실선 */
 .cell-wrapper {
     width: 100%;
     box-sizing: border-box;
