@@ -5,80 +5,8 @@ st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="wide")
 
 SYMBOLS = "123456789ABCDEFG"
 
-st.markdown("""
-<style>
-/* 전체 화면 배치 */
-.block-container {
-    max-width: 900px;
-    padding-top: 2rem;
-    padding-bottom: 3rem;
-}
-
-/* 스도쿠 보드 컨테이너 (정사각형 유지 및 회색/검은색 실선 설정) */
-div[data-testid="stTextInput"] {
-    margin: 0 !important;
-    padding: 0 !important;
-}
-div[data-testid="stTextInput"] label {
-    display: none !important;
-}
-div[data-testid="stTextInput"] input {
-    text-align: center !important;
-    font-size: 20px !important;
-    font-weight: 700 !important;
-    aspect-ratio: 1 / 1 !important; /* 완벽한 정사각형 유지 */
-    width: 100% !important;
-    height: 100% !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-    border: 1px solid #d0d0d0 !important; /* 기본 회색 실선 */
-    background: white !important;
-    color: #111111 !important;
-    box-sizing: border-box !important;
-}
-
-div[data-testid="stTextInput"] input:focus {
-    border: 2px solid #2878d0 !important;
-    box-shadow: none !important;
-    z-index: 10 !important;
-}
-
-/* 입력 칸 간격 완벽 제거 */
-div[data-testid="stHorizontalBlock"] {
-    gap: 0 !important;
-}
-div[data-testid="stVerticalBlock"] {
-    gap: 0 !important;
-}
-
-/* 3x3 / 4x4 구역 검은색 굵은 실선 */
-.box-border-top {
-    border-top: 3px solid #000000 !important;
-}
-.box-border-bottom {
-    border-bottom: 3px solid #000000 !important;
-}
-.box-border-left {
-    border-left: 3px solid #000000 !important;
-}
-.box-border-right {
-    border-right: 3px solid #000000 !important;
-}
-
-/* 버튼 스타일 */
-.stButton > button {
-    min-height: 44px;
-    border-radius: 8px;
-    font-weight: 600;
-    margin-top: 12px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
 def empty_board(n):
     return [["" for _ in range(n)] for _ in range(n)]
-
 
 def valid(board, r, c, value, n, box):
     for i in range(n):
@@ -95,7 +23,6 @@ def valid(board, r, c, value, n, box):
                 return False
     return True
 
-
 def candidates(board, r, c, n, box):
     used = set(board[r])
     used.update(board[i][c] for i in range(n))
@@ -105,7 +32,6 @@ def candidates(board, r, c, n, box):
         for cc in range(bc, bc + box):
             used.add(board[rr][cc])
     return [s for s in SYMBOLS[:n] if s not in used]
-
 
 def solve_board(board, n, box):
     board = [row[:] for row in board]
@@ -139,7 +65,6 @@ def solve_board(board, n, box):
     if backtrack():
         return board
     return None
-
 
 def count_solutions(board, n, box, limit=2):
     board = [row[:] for row in board]
@@ -177,7 +102,6 @@ def count_solutions(board, n, box, limit=2):
     backtrack()
     return count
 
-
 def make_puzzle(clues):
     n = 9
     box = 3
@@ -200,7 +124,6 @@ def make_puzzle(clues):
 
     return puzzle, solution
 
-
 def read_board(n):
     board = []
     for r in range(n):
@@ -213,50 +136,79 @@ def read_board(n):
         board.append(row)
     return board
 
-
-def draw_board(n, box, fixed=None):
-    fixed = fixed or set()
-
-    for r in range(n):
-        cols = st.columns(n, gap=None)
-        for c in range(n):
-            key = f"cell_{n}_{r}_{c}"
-            
-            # 구역 경계선(검은 실선) 클래스 부여
-            border_classes = []
-            if r % box == 0:
-                border_classes.append("box-border-top")
-            if r == n - 1:
-                border_classes.append("box-border-bottom")
-            if c % box == 0:
-                border_classes.append("box-border-left")
-            if c == n - 1:
-                border_classes.append("box-border-right")
-            
-            css_class = " ".join(border_classes)
-
-            with cols[c]:
-                if css_class:
-                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                
-                st.text_input(
-                    f"{r + 1}-{c + 1}",
-                    key=key,
-                    max_chars=1,
-                    label_visibility="collapsed",
-                    placeholder="·",
-                    disabled=(r, c) in fixed,
-                )
-                
-                if css_class:
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-
 def set_board(board, n):
     for r in range(n):
         for c in range(n):
             st.session_state[f"cell_{n}_{r}_{c}"] = board[r][c]
 
+def draw_board(n, box, fixed=None):
+    fixed = fixed or set()
+    
+    # 격자 컨테이너 크기 계산 (9x9 기준 약 450px~500px 정사각형)
+    cell_size = 50 if n == 9 else 32
+    board_width = cell_size * n + 6
+
+    # CSS 렌더링
+    st.markdown(f"""
+    <style>
+    .sudoku-container {{
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+    }}
+    .sudoku-board-{n} {{
+        display: grid;
+        grid-template-columns: repeat({n}, {cell_size}px);
+        grid-template-rows: repeat({n}, {cell_size}px);
+        width: {board_width}px;
+        border: 3px solid #000000;
+        background-color: #000000;
+        gap: 0px;
+    }}
+    .sudoku-cell-wrap {{
+        width: {cell_size}px;
+        height: {cell_size}px;
+        box-sizing: border-box;
+        background: white;
+    }}
+    /* 입력창 스타일 */
+    .stTextInput input {{
+        height: {cell_size}px !important;
+        width: {cell_size}px !important;
+        text-align: center !important;
+        font-size: {22 if n == 9 else 15}px !important;
+        font-weight: bold !important;
+        border-radius: 0px !important;
+        border: none !important;
+        padding: 0 !important;
+    }}
+    /* 박스 구역 구분 (검은색 실선) */
+    .border-top {{ border-top: 3px solid #000000 !important; }}
+    .border-left {{ border-left: 3px solid #000000 !important; }}
+    .border-inner {{ border: 1px solid #d0d0d0; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 3x3 / 4x4 구역 분할 구조 생성
+    for r in range(n):
+        cols = st.columns(n)
+        for c in range(n):
+            key = f"cell_{n}_{r}_{c}"
+            
+            # 셀별 테두리 조건
+            top_class = "border-top" if (r % box == 0 and r != 0) else ""
+            left_class = "border-left" if (c % box == 0 and c != 0) else ""
+            
+            with cols[c]:
+                st.markdown(f'<div class="{top_class} {left_class} border-inner">', unsafe_allow_html=True)
+                st.text_input(
+                    f"{r+1}-{c+1}",
+                    key=key,
+                    max_chars=1,
+                    label_visibility="collapsed",
+                    disabled=(r, c) in fixed
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
 
 def board_errors(board, n, box):
     errors = []
@@ -269,9 +221,7 @@ def board_errors(board, n, box):
             if value == "":
                 continue
             if value not in symbols:
-                errors.append(
-                    f"{r + 1}행 {c + 1}열: 허용되지 않는 기호입니다."
-                )
+                errors.append(f"{r + 1}행 {c + 1}열: 허용되지 않는 기호입니다.")
             elif value in seen:
                 errors.append(f"{r + 1}행에 같은 숫자가 중복됩니다.")
             seen.add(value)
@@ -350,11 +300,12 @@ else:
             st.session_state.pop("solve_result", None)
             st.rerun()
 
-        st.info(
-            "빈칸에 숫자를 입력하세요. 9×9는 1-9, "
-            "16×16은 1-9와 A-G를 사용합니다."
-        )
-        draw_board(n, box)
+        st.info("빈칸에 숫자를 입력하세요. 9×9는 1-9, 16×16은 1-9와 A-G를 사용합니다.")
+        
+        # 중앙 정렬을 위한 컬럼 분할
+        c1, c2, c3 = st.columns([1, 8, 1])
+        with c2:
+            draw_board(n, box)
 
         if st.button("완료 — 풀이하기", type="primary", use_container_width=True):
             board = read_board(n)
@@ -367,10 +318,7 @@ else:
             else:
                 result = solve_board(board, n, box)
                 if result is None:
-                    st.error(
-                        "풀이 불가능: 현재 입력한 숫자와 규칙을 만족하는 "
-                        "해답을 찾지 못했습니다. 입력을 확인해 주세요."
-                    )
+                    st.error("풀이 불가능: 입력한 조건으로는 해답을 찾을 수 없습니다.")
                 else:
                     set_board(result, n)
                     st.success("풀이가 완료되었습니다.")
@@ -403,7 +351,10 @@ else:
 
         if "puzzle" in st.session_state:
             st.write("빈칸에 숫자를 입력해 문제를 풀어보세요.")
-            draw_board(9, 3, st.session_state.puzzle_fixed)
+            
+            c1, c2, c3 = st.columns([1, 8, 1])
+            with c2:
+                draw_board(9, 3, st.session_state.puzzle_fixed)
 
             left, right = st.columns(2)
             with left:
