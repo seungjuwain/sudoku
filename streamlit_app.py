@@ -1,13 +1,90 @@
 import random
 import streamlit as st
-import streamlit.components.v1 as components
 
-st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="wide")
+st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="centered")
 
 SYMBOLS = "123456789ABCDEFG"
 
+# ---------------------------------------------------------
+# CSS: 절대 무너지지 않는 정사각형 격자 및 실선 레이아웃
+# ---------------------------------------------------------
+st.markdown("""
+<style>
+/* 전체 컨테이너 너비 고정 */
+.block-container {
+    max-width: 600px !important;
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+}
+
+/* Streamlit 컬럼 간격 완전 제거 */
+div[data-testid="stHorizontalBlock"] {
+    gap: 0px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+div[data-testid="column"] {
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+}
+
+/* 입력 칸 라벨 숨기기 */
+div[data-testid="stTextInput"] label {
+    display: none !important;
+}
+
+/* 입력 칸 기본 스타일 (정사각형 고정 & 기본 회색 실선) */
+div[data-testid="stTextInput"] input {
+    text-align: center !important;
+    font-size: 18px !important;
+    font-weight: bold !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    width: 100% !important;
+    padding: 0 !important;
+    border-radius: 0px !important;
+    border: 1px solid #c0c0c0 !important; /* 기본 회색 실선 */
+    background-color: #ffffff !important;
+    color: #111111 !important;
+    box-sizing: border-box !important;
+}
+
+div[data-testid="stTextInput"] input:focus {
+    border: 2px solid #2878d0 !important;
+    box-shadow: none !important;
+}
+
+div[data-testid="stTextInput"] input:disabled {
+    background-color: #f2f4f7 !important;
+    color: #000000 !important;
+    font-weight: 900 !important;
+}
+
+/* 3x3 / 4x4 구역 검은색 굵은 실선 적용 */
+.cell-box {
+    box-sizing: border-box !important;
+}
+.b-top { border-top: 3px solid #000000 !important; }
+.b-bottom { border-bottom: 3px solid #000000 !important; }
+.b-left { border-left: 3px solid #000000 !important; }
+.b-right { border-right: 3px solid #000000 !important; }
+
+/* 버튼 스타일 */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 600;
+    margin-top: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 def empty_board(n):
     return [["" for _ in range(n)] for _ in range(n)]
+
 
 def valid(board, r, c, value, n, box):
     for i in range(n):
@@ -24,6 +101,7 @@ def valid(board, r, c, value, n, box):
                 return False
     return True
 
+
 def candidates(board, r, c, n, box):
     used = set(board[r])
     used.update(board[i][c] for i in range(n))
@@ -33,6 +111,7 @@ def candidates(board, r, c, n, box):
         for cc in range(bc, bc + box):
             used.add(board[rr][cc])
     return [s for s in SYMBOLS[:n] if s not in used]
+
 
 def solve_board(board, n, box):
     board = [row[:] for row in board]
@@ -66,6 +145,7 @@ def solve_board(board, n, box):
     if backtrack():
         return board
     return None
+
 
 def count_solutions(board, n, box, limit=2):
     board = [row[:] for row in board]
@@ -103,6 +183,7 @@ def count_solutions(board, n, box, limit=2):
     backtrack()
     return count
 
+
 def make_puzzle(clues):
     n = 9
     box = 3
@@ -125,6 +206,7 @@ def make_puzzle(clues):
 
     return puzzle, solution
 
+
 def read_board(n):
     board = []
     for r in range(n):
@@ -137,57 +219,44 @@ def read_board(n):
         board.append(row)
     return board
 
+
 def set_board(board, n):
     for r in range(n):
         for c in range(n):
             st.session_state[f"cell_{n}_{r}_{c}"] = board[r][c]
 
-def render_sudoku_table(n, box, fixed=None):
+
+def draw_board(n, box, fixed=None):
     fixed = fixed or set()
-    cell_size = 48 if n == 9 else 32
-    board_size = cell_size * n + 8
 
-    # HTML/CSS로 그려지는 직선 표
-    table_rows = ""
     for r in range(n):
-        table_rows += "<tr>"
+        cols = st.columns(n)
         for c in range(n):
-            top = "border-top: 3px solid #000;" if (r % box == 0 and r != 0) else ""
-            left = "border-left: 3px solid #000;" if (c % box == 0 and c != 0) else ""
-            val = st.session_state.get(f"cell_{n}_{r}_{c}", "")
-            is_fixed = (r, c) in fixed
+            key = f"cell_{n}_{r}_{c}"
             
-            dis_attr = "disabled" if is_fixed else ""
-            bg_color = "#e8e8e8" if is_fixed else "#ffffff"
+            # 검은색 굵은 실구분선 설정 (3x3 또는 4x4 경계)
+            border_classes = ["cell-box"]
+            if r % box == 0:
+                border_classes.append("b-top")
+            if r == n - 1:
+                border_classes.append("b-bottom")
+            if c % box == 0:
+                border_classes.append("b-left")
+            if c == n - 1:
+                border_classes.append("b-right")
+            
+            cls_str = " ".join(border_classes)
 
-            table_rows += f"""
-            <td style="{top} {left} width: {cell_size}px; height: {cell_size}px; padding: 0; margin: 0; border: 1px solid #b0b0b0; text-align: center;">
-                <input type="text" maxlength="1" value="{val}" {dis_attr}
-                       id="cell_{r}_{c}"
-                       style="width: 100%; height: 100%; border: none; outline: none; text-align: center; font-size: {22 if n == 9 else 15}px; font-weight: bold; background: {bg_color}; color: #000; border-radius: 0;"
-                       oninput="this.value = this.value.toUpperCase(); parent.postMessage({{type: 'sudoku_change', r: {r}, c: {c}, val: this.value}}, '*');">
-            </td>
-            """
-        table_rows += "</tr>"
+            with cols[c]:
+                st.markdown(f'<div class="{cls_str}">', unsafe_allow_html=True)
+                st.text_input(
+                    f"{r}-{c}",
+                    key=key,
+                    max_chars=1,
+                    disabled=(r, c) in fixed,
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
 
-    html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-        body {{ margin: 0; padding: 0; display: flex; justify-content: center; background: transparent; }}
-        table {{ border-collapse: collapse; border: 3px solid #000; background: #fff; width: {board_size}px; height: {board_size}px; table-layout: fixed; }}
-    </style>
-    </head>
-    <body>
-        <table>
-            {table_rows}
-        </table>
-    </body>
-    </html>
-    """
-
-    components.html(html_code, height=board_size + 20)
 
 def board_errors(board, n, box):
     errors = []
@@ -232,6 +301,10 @@ def board_errors(board, n, box):
 
     return list(dict.fromkeys(errors))
 
+
+# ---------------------------------------------------------
+# 화면 로직
+# ---------------------------------------------------------
 if "mode" not in st.session_state:
     st.session_state.mode = "처음 화면"
 
@@ -280,16 +353,7 @@ else:
 
         st.info("빈칸에 숫자를 입력하세요. 9×9는 1-9, 16×16은 1-9와 A-G를 사용합니다.")
         
-        # 폼 입력값을 세션 상태와 동기화받기 위한 텍스트 입력 수단
-        with st.expander("직접 값 수정/확인", expanded=False):
-            for r in range(n):
-                cols = st.columns(n)
-                for c in range(n):
-                    key = f"cell_{n}_{r}_{c}"
-                    with cols[c]:
-                        st.text_input(f"{r}-{c}", key=key, max_chars=1)
-
-        render_sudoku_table(n, box)
+        draw_board(n, box)
 
         if st.button("완료 — 풀이하기", type="primary", use_container_width=True):
             board = read_board(n)
@@ -336,7 +400,7 @@ else:
         if "puzzle" in st.session_state:
             st.write("빈칸에 숫자를 입력해 문제를 풀어보세요.")
             
-            render_sudoku_table(9, 3, st.session_state.puzzle_fixed)
+            draw_board(9, 3, st.session_state.puzzle_fixed)
 
             left, right = st.columns(2)
             with left:
