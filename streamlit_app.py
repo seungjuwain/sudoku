@@ -1,100 +1,64 @@
+```python
 import random
 import streamlit as st
 
-st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="centered")
+st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="wide")
 
 SYMBOLS = "123456789ABCDEFG"
 
-# ---------------------------------------------------------
-# CSS: Streamlit의 BaseWeb Input 테두리 및 모서리 완벽 제거
-# ---------------------------------------------------------
 st.markdown("""
 <style>
-/* 1. 전체 컨테이너 너비 고정 */
+/* 전체 화면 */
 .block-container {
-    max-width: 500px !important;
-    padding-top: 1.5rem !important;
-    padding-bottom: 2rem !important;
+    max-width: 1100px;
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+}
+h1, h2, h3 {
+    letter-spacing: -0.5px;
+}
+div[data-testid="stRadio"] > label,
+div[data-testid="stSelectbox"] > label {
+    font-weight: 600;
 }
 
-/* 2. 레이아웃 간격 0으로 초기화 */
-div[data-testid="stHorizontalBlock"] {
-    gap: 0px !important;
-    margin: 0px !important;
-    padding: 0px !important;
-}
-
-div[data-testid="column"] {
-    padding: 0px !important;
-    margin: 0px !important;
-    min-width: 0px !important;
-}
-
+/* 스도쿠 입력 칸 */
 div[data-testid="stTextInput"] {
-    margin: 0px !important;
-    padding: 0px !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
-
 div[data-testid="stTextInput"] label {
     display: none !important;
 }
-
-/* 3. BaseWeb(Streamlit 내부 입력창 프레임) 둥근 모서리 및 배경 강제 제거 */
-div[data-baseweb="input"] {
-    background-color: transparent !important;
-    border: none !important;
-    border-radius: 0px !important;
-    box-shadow: none !important;
-    padding: 0px !important;
-    min-height: 0px !important;
-}
-
-/* 4. 실제 <input> 태그 직각 정사각형 고정 및 회색 실선 기본 적용 */
 div[data-testid="stTextInput"] input {
     text-align: center !important;
     font-size: 20px !important;
-    font-weight: bold !important;
-    aspect-ratio: 1 / 1 !important;
-    height: 100% !important;
-    width: 100% !important;
-    padding: 0px !important;
-    margin: 0px !important;
-    border-radius: 0px !important; /* 둥근 모서리 완전 제거 */
-    border: 1px solid #b0b0b0 !important; /* 내부 회색 실선 */
-    background-color: #ffffff !important;
-    color: #000000 !important;
-    box-sizing: border-box !important;
-    box-shadow: none !important;
-    outline: none !important;
+    font-weight: 500 !important;
+    min-height: 44px !important;
+    padding: 4px 0 !important;
+    border-radius: 0 !important;
+    border: 1px solid #b8c2cc !important;
+    background: white !important;
+    color: #172b4d !important;
 }
-
-/* 포커스 및 비활성화 스타일 */
 div[data-testid="stTextInput"] input:focus {
-    border: 2px solid #1a73e8 !important;
-    z-index: 5 !important;
+    border: 2px solid #2878d0 !important;
+    box-shadow: none !important;
 }
 
-div[data-testid="stTextInput"] input:disabled {
-    background-color: #f1f3f4 !important;
-    color: #000000 !important;
-    font-weight: 900 !important;
+/* 입력 칸 주변 간격 */
+div[data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+}
+div[data-testid="stVerticalBlock"] {
+    gap: 0.25rem;
 }
 
-/* 5. 3x3 (또는 4x4) 구역 구분을 위한 검은색 굵은 실선 */
-.cell-wrapper {
-    width: 100%;
-    box-sizing: border-box;
-}
-.b-top { border-top: 3px solid #000000 !important; }
-.b-bottom { border-bottom: 3px solid #000000 !important; }
-.b-left { border-left: 3px solid #000000 !important; }
-.b-right { border-right: 3px solid #000000 !important; }
-
-/* 버튼 스타일 */
+/* 버튼 */
 .stButton > button {
-    border-radius: 6px;
+    min-height: 44px;
+    border-radius: 8px;
     font-weight: 600;
-    margin-top: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -238,42 +202,35 @@ def read_board(n):
     return board
 
 
+def draw_board(n, box, fixed=None):
+    fixed = fixed or set()
+    symbols = SYMBOLS[:n]
+
+    # 3×3 또는 4×4 박스 단위로 구성해 경계가 눈에 띄게 표시됩니다.
+    for box_row in range(0, n, box):
+        for local_row in range(box):
+            cols = st.columns(n, gap=None)
+            for box_col in range(0, n, box):
+                for local_col in range(box):
+                    r = box_row + local_row
+                    c = box_col + local_col
+                    key = f"cell_{n}_{r}_{c}"
+
+                    with cols[c]:
+                        st.text_input(
+                            f"{r + 1}-{c + 1}",
+                            key=key,
+                            max_chars=1,
+                            label_visibility="collapsed",
+                            placeholder="·",
+                            disabled=(r, c) in fixed,
+                        )
+
+
 def set_board(board, n):
     for r in range(n):
         for c in range(n):
             st.session_state[f"cell_{n}_{r}_{c}"] = board[r][c]
-
-
-def draw_board(n, box, fixed=None):
-    fixed = fixed or set()
-
-    for r in range(n):
-        cols = st.columns(n)
-        for c in range(n):
-            key = f"cell_{n}_{r}_{c}"
-            
-            # 구역 구분용 검은색 실선 적용 (3x3 또는 4x4 테두리)
-            classes = ["cell-wrapper"]
-            if r % box == 0:
-                classes.append("b-top")
-            if r == n - 1:
-                classes.append("b-bottom")
-            if c % box == 0:
-                classes.append("b-left")
-            if c == n - 1:
-                classes.append("b-right")
-            
-            cls_str = " ".join(classes)
-
-            with cols[c]:
-                st.markdown(f'<div class="{cls_str}">', unsafe_allow_html=True)
-                st.text_input(
-                    f"{r}-{c}",
-                    key=key,
-                    max_chars=1,
-                    disabled=(r, c) in fixed,
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
 
 
 def board_errors(board, n, box):
@@ -287,7 +244,9 @@ def board_errors(board, n, box):
             if value == "":
                 continue
             if value not in symbols:
-                errors.append(f"{r + 1}행 {c + 1}열: 허용되지 않는 기호입니다.")
+                errors.append(
+                    f"{r + 1}행 {c + 1}열: 허용되지 않는 기호입니다."
+                )
             elif value in seen:
                 errors.append(f"{r + 1}행에 같은 숫자가 중복됩니다.")
             seen.add(value)
@@ -366,8 +325,10 @@ else:
             st.session_state.pop("solve_result", None)
             st.rerun()
 
-        st.info("빈칸에 숫자를 입력하세요. 9×9는 1-9, 16×16은 1-9와 A-G를 사용합니다.")
-        
+        st.info(
+            "빈칸에 숫자를 입력하세요. 9×9는 1~9, "
+            "16×16은 1~9와 A~G를 사용합니다."
+        )
         draw_board(n, box)
 
         if st.button("완료 — 풀이하기", type="primary", use_container_width=True):
@@ -381,7 +342,10 @@ else:
             else:
                 result = solve_board(board, n, box)
                 if result is None:
-                    st.error("풀이 불가능: 입력한 조건으로는 해답을 찾을 수 없습니다.")
+                    st.error(
+                        "풀이 불가능: 현재 입력한 숫자와 규칙을 만족하는 "
+                        "해답을 찾지 못했습니다. 입력을 확인해 주세요."
+                    )
                 else:
                     set_board(result, n)
                     st.success("풀이가 완료되었습니다.")
@@ -414,7 +378,6 @@ else:
 
         if "puzzle" in st.session_state:
             st.write("빈칸에 숫자를 입력해 문제를 풀어보세요.")
-            
             draw_board(9, 3, st.session_state.puzzle_fixed)
 
             left, right = st.columns(2)
@@ -433,3 +396,4 @@ else:
 
             if st.session_state.get("puzzle_message"):
                 st.info(st.session_state.puzzle_message)
+```
