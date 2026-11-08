@@ -1,14 +1,9 @@
 
 import streamlit as st
-import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 import random
 import time
 import math
-
-# =========================================================
-# 기본 설정
-# =========================================================
 
 st.set_page_config(
     page_title="Classic Sudoku",
@@ -17,89 +12,68 @@ st.set_page_config(
 )
 
 SYMBOLS = "123456789ABCDEFG"
-
 DIFFICULTIES = ["하", "중", "상", "최상"]
+CLUES = {"하": 26, "중": 23, "상": 20, "최상": 17}
+MIN_CLUES = {9: 17, 16: 40}
 
-CLUES = {
-    "하": 26,
-    "중": 23,
-    "상": 20,
-    "최상": 17
-}
+SEED = [
+    [0,0,0,0,0,0,0,1,0],
+    [4,0,0,0,0,0,0,0,0],
+    [0,2,0,0,0,0,0,0,0],
+    [0,0,0,0,5,0,4,0,7],
+    [0,0,8,0,0,0,3,0,0],
+    [0,0,1,0,9,0,0,0,0],
+    [3,0,0,4,0,0,2,0,0],
+    [0,5,0,1,0,0,0,0,0],
+    [0,0,0,8,0,6,0,0,0]
+]
 
-MIN_CLUES = {
-    9: 17,
-    16: 40
-}
-
-SEED = (
-    "000000010"
-    "400000000"
-    "020000000"
-    "000050407"
-    "008000300"
-    "001090000"
-    "300400200"
-    "050100000"
-    "000806000"
-)
-
-# =========================================================
-# 디자인
-# =========================================================
+# =====================================================
+# CSS
+# =====================================================
 
 st.markdown("""
 <style>
 .block-container {
     max-width: 1100px;
-    padding: 1rem 0.6rem;
+    padding: 1.2rem 0.6rem;
 }
 
-/* 셀 버튼 공통 */
-div[class*="st-key-cell_"] button {
-    width: 100%;
+.st-key-sudoku_board {
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.st-key-sudoku_board [data-testid="stVerticalBlock"] {
+    gap: 2px !important;
+}
+
+.st-key-sudoku_board [data-testid="stHorizontalBlock"] {
+    gap: 2px !important;
+}
+
+.st-key-sudoku_board [data-testid="column"] {
     min-width: 0 !important;
-    height: auto;
-    aspect-ratio: 1 / 1;
     padding: 0 !important;
-    border-radius: 0 !important;
-    font-size: clamp(12px, 2vw, 22px) !important;
-    font-weight: 500;
-    line-height: 1;
-    box-shadow: none !important;
 }
 
-/* 셀 버튼 내부 */
-div[class*="st-key-cell_"] button p {
+.st-key-sudoku_board button {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+}
+
+.st-key-sudoku_board button p {
     margin: 0 !important;
     padding: 0 !important;
 }
 
-/* 선택 셀 */
-div[class*="st-key-cell_"] button.selected-cell {
-    background: #e8dcff !important;
-    color: #333 !important;
-}
-
-/* 하늘색 행과 열 */
-div[class*="st-key-cell_"] button.related-cell {
-    background: #dceeff !important;
-    color: #333 !important;
-}
-
-/* 기본 셀 */
-div[class*="st-key-cell_"] button.normal-cell {
-    background: #ffffff !important;
-    color: #222 !important;
-}
-
-/* 초기 단서 */
-div[class*="st-key-cell_"] button.given-cell {
-    color: #28548e !important;
-    font-weight: 800 !important;
-}
-
-/* 남은 숫자 */
 .remaining-number {
     text-align: center;
     background: #edf5ff;
@@ -121,14 +95,12 @@ div[class*="st-key-cell_"] button.given-cell {
     margin-top: 3px;
 }
 
-/* 하트 */
 .hearts {
     text-align: center;
     font-size: 30px;
     margin: 10px;
 }
 
-/* 대전 타이머 */
 .timer-background {
     width: 100%;
     height: 18px;
@@ -143,7 +115,13 @@ div[class*="st-key-cell_"] button.given-cell {
     border-radius: 10px;
 }
 
-/* 대전 규칙 */
+.player-label {
+    text-align: center;
+    font-size: 25px;
+    font-weight: 800;
+    margin: 10px 0;
+}
+
 .rule-card {
     background: #f0f6ff;
     color: #24364c;
@@ -152,26 +130,16 @@ div[class*="st-key-cell_"] button.given-cell {
     line-height: 1.9;
     border: 1px solid #b8c8dc;
 }
-
-/* 플레이어 */
-.player-label {
-    text-align: center;
-    font-size: 25px;
-    font-weight: 800;
-    margin: 10px 0;
-}
 </style>
 """, unsafe_allow_html=True)
 
 
-# =========================================================
-# 스도쿠 엔진
-# =========================================================
+# =====================================================
+# 스도쿠 풀이 엔진
+# =====================================================
 
 def candidates(board, r, c, n, box):
-
     used = set(board[r])
-
     used.update(board[i][c] for i in range(n))
 
     br = (r // box) * box
@@ -185,13 +153,11 @@ def candidates(board, r, c, n, box):
 
 
 def find_empty(board, n, box):
-
     best = None
     best_options = None
 
     for r in range(n):
         for c in range(n):
-
             if board[r][c] != 0:
                 continue
 
@@ -213,14 +179,8 @@ def find_empty(board, n, box):
     return best[0], best[1], best_options
 
 
-def solve_count(
-    board,
-    n,
-    box,
-    limit=2,
-    max_nodes=300000,
-    max_seconds=6
-):
+def solve_count(board, n, box, limit=2,
+                max_nodes=300000, max_seconds=6):
 
     count = 0
     solution = None
@@ -229,7 +189,6 @@ def solve_count(
     start = time.monotonic()
 
     def backtrack():
-
         nonlocal count, solution, nodes, exhausted
 
         if count >= limit:
@@ -237,116 +196,82 @@ def solve_count(
 
         nodes += 1
 
-        if (
-            nodes > max_nodes
-            or time.monotonic() - start > max_seconds
-        ):
+        if (nodes > max_nodes or
+                time.monotonic() - start > max_seconds):
             exhausted = False
             return
 
         r, c, options = find_empty(board, n, box)
 
         if r is None:
-
             count += 1
-
             if solution is None:
                 solution = [row[:] for row in board]
-
             return
 
         if not options:
             return
 
         for value in options:
-
             board[r][c] = value
-
             backtrack()
-
             board[r][c] = 0
 
             if count >= limit or not exhausted:
                 return
 
     backtrack()
-
     return count, solution, exhausted
 
 
 def validate(board, n, box):
-
     for r in range(n):
-
         values = [v for v in board[r] if v]
-
         if len(values) != len(set(values)):
             return False, f"{r+1}행에 중복 숫자가 있습니다."
 
     for c in range(n):
-
         values = [
-            board[r][c]
-            for r in range(n)
-            if board[r][c]
+            board[r][c] for r in range(n) if board[r][c]
         ]
-
         if len(values) != len(set(values)):
             return False, f"{c+1}열에 중복 숫자가 있습니다."
 
     for br in range(0, n, box):
         for bc in range(0, n, box):
-
             values = [
                 board[r][c]
                 for r in range(br, br + box)
                 for c in range(bc, bc + box)
                 if board[r][c]
             ]
-
             if len(values) != len(set(values)):
                 return False, "같은 구역에 중복 숫자가 있습니다."
 
     return True, ""
 
 
-# =========================================================
+# =====================================================
 # 문제 생성
-# =========================================================
+# =====================================================
 
 def generate_puzzle(target_clues):
-
-    seed = [
-        [
-            int(SEED[r * 9 + c])
-            for c in range(9)
-        ]
-        for r in range(9)
-    ]
-
-    count, seed_solution, complete = solve_count(
-        [row[:] for row in seed],
-        9,
-        3,
-        limit=2
+    count, original_solution, complete = solve_count(
+        [row[:] for row in SEED], 9, 3, limit=2
     )
 
     if count != 1 or not complete:
         raise RuntimeError("기본 퍼즐 검증에 실패했습니다.")
 
     def shuffled_groups():
-
         groups = [
             list(range(3 * i, 3 * i + 3))
             for i in range(3)
         ]
-
         random.shuffle(groups)
-
         return [
-            value
-            for group in groups
-            for value in random.sample(group, 3)
+            v for group in groups
+            for v in random.sample(group, 3)
         ]
 
     rows = shuffled_groups()
@@ -354,16 +279,11 @@ def generate_puzzle(target_clues):
 
     digits = list(range(1, 10))
     random.shuffle(digits)
-
-    mapping = {
-        i + 1: digits[i]
-        for i in range(9)
-    }
+    mapping = {i + 1: digits[i] for i in range(9)}
 
     transpose = random.choice([True, False])
 
     def transform(board):
-
         result = [
             [board[r][c] for c in cols]
             for r in rows
@@ -373,15 +293,12 @@ def generate_puzzle(target_clues):
             result = [list(row) for row in zip(*result)]
 
         return [
-            [
-                mapping[v] if v else 0
-                for v in row
-            ]
+            [mapping[v] if v else 0 for v in row]
             for row in result
         ]
 
-    puzzle = transform(seed)
-    solution = transform(seed_solution)
+    puzzle = transform(SEED)
+    solution = transform(original_solution)
 
     empty = [
         (r, c)
@@ -389,7 +306,6 @@ def generate_puzzle(target_clues):
         for c in range(9)
         if puzzle[r][c] == 0
     ]
-
     random.shuffle(empty)
 
     for r, c in empty[:target_clues - 17]:
@@ -400,19 +316,14 @@ def generate_puzzle(target_clues):
     return puzzle, solution
 
 
-# =========================================================
+# =====================================================
 # 상태 관리
-# =========================================================
+# =====================================================
 
 def initialize_board(board, mode):
-
-    st.session_state.board = [
-        row[:] for row in board
-    ]
-
+    st.session_state.board = [row[:] for row in board]
     st.session_state.selected = None
     st.session_state.board_mode = mode
-
     st.session_state.entry_value = ""
 
     n = len(board)
@@ -424,115 +335,114 @@ def initialize_board(board, mode):
         if board[r][c] != 0
     }
 
-    st.session_state.locked_values = {
-        (r, c): board[r][c]
-        for r in range(n)
-        for c in range(n)
-        if board[r][c] != 0
-    }
-
 
 def select_cell(r, c):
-
     st.session_state.selected = (r, c)
     st.session_state.entry_value = ""
 
 
-# =========================================================
-# 셀 선택 및 입력
-# =========================================================
+# =====================================================
+# 표준 스도쿠 판
+# =====================================================
 
-def draw_board(n, mode):
-
+def draw_board(n):
     box = 3 if n == 9 else 4
-
     selected = st.session_state.selected
     locked = st.session_state.locked
 
-    # 정사각형 셀 버튼으로 판 구성
+    # 9x9는 넉넉한 셀, 16x16은 작은 셀
+    cell_height = 54 if n == 9 else 36
+    font_size = 24 if n == 9 else 15
+
+    css = f"""
+    <style>
+    .st-key-sudoku_board button {{
+        height: {cell_height}px !important;
+        min-height: {cell_height}px !important;
+        font-size: {font_size}px !important;
+        background: white !important;
+        color: #26384d !important;
+        border: 1px solid #b8c5d5 !important;
+    }}
+    """
+
     for r in range(n):
-
-        cols = st.columns(n, gap="small")
-
         for c in range(n):
-
-            key = f"cell_{r}_{c}"
-            value = st.session_state.board[r][c]
-
             is_selected = selected == (r, c)
-            is_given = (r, c) in locked
 
-            in_related_area = (
+            same_row = selected is not None and selected[0] == r
+            same_col = selected is not None and selected[1] == c
+
+            same_box = (
                 selected is not None
-                and (
-                    selected[0] == r
-                    or selected[1] == c
-                    or (
-                        selected[0] // box == r // box
-                        and selected[1] // box == c // box
-                    )
-                )
+                and selected[0] // box == r // box
+                and selected[1] // box == c // box
             )
 
             if is_selected:
-                cell_class = "selected-cell"
-
-            elif in_related_area:
-                cell_class = "related-cell"
-
+                background = "#e8dcff"
+            elif same_row or same_col or same_box:
+                background = "#dceeff"
+            elif (r, c) in locked:
+                background = "#e9eef5"
             else:
-                cell_class = "normal-cell"
+                background = "#ffffff"
 
-            if is_given:
-                cell_class += " given-cell"
+            color = "#28548e" if (r, c) in locked else "#26384d"
+            weight = "800" if (r, c) in locked else "500"
 
-            label = SYMBOLS[value - 1] if value else " "
-
-            # 셀별 색상 지정
-            st.markdown(
-                f"""
-                <style>
-                .st-key-{key} button {{
-                    background-color: {
-                        '#e8dcff' if is_selected
-                        else '#dceeff' if in_related_area
-                        else '#e9eef5' if is_given
-                        else '#ffffff'
-                    } !important;
-
-                    color: {
-                        '#28548e' if is_given else '#222222'
-                    } !important;
-
-                    border: 1px solid #777777 !important;
-                    border-radius: 0 !important;
-                    padding: 0 !important;
-                    font-weight: {
-                        '800' if is_given else '500'
-                    } !important;
-                }}
-                </style>
-                """,
-                unsafe_allow_html=True
+            border_right = (
+                "3px solid #34465c"
+                if (c + 1) % box == 0 and c != n - 1
+                else "1px solid #b8c5d5"
             )
 
-            with cols[c]:
+            border_bottom = (
+                "3px solid #34465c"
+                if (r + 1) % box == 0 and r != n - 1
+                else "1px solid #b8c5d5"
+            )
 
-                st.button(
-                    label,
-                    key=key,
-                    use_container_width=True,
-                    on_click=select_cell,
-                    args=(r, c)
-                )
+            css += f"""
+            .st-key-cell_{r}_{c} button {{
+                background: {background} !important;
+                color: {color} !important;
+                font-weight: {weight} !important;
+                border-right: {border_right} !important;
+                border-bottom: {border_bottom} !important;
+                border-radius: 0 !important;
+            }}
+            """
+
+    css += "</style>"
+
+    st.markdown(css, unsafe_allow_html=True)
+
+    # 스타일과 버튼을 하나의 컨테이너에 모음
+    with st.container(key="sudoku_board"):
+
+        for r in range(n):
+            cols = st.columns(n, gap=None)
+
+            for c in range(n):
+                value = st.session_state.board[r][c]
+                label = SYMBOLS[value - 1] if value else " "
+
+                with cols[c]:
+                    st.button(
+                        label,
+                        key=f"cell_{r}_{c}",
+                        use_container_width=True,
+                        on_click=select_cell,
+                        args=(r, c)
+                    )
 
 
-# =========================================================
-# 선택한 셀에 숫자 입력
-# =========================================================
+# =====================================================
+# 입력
+# =====================================================
 
 def apply_entry():
-
     selected = st.session_state.selected
 
     if selected is None:
@@ -540,9 +450,11 @@ def apply_entry():
 
     r, c = selected
 
-    key = "entry_value"
+    if (r, c) in st.session_state.locked:
+        st.session_state.entry_value = ""
+        return
 
-    raw = st.session_state.get(key, "")
+    raw = st.session_state.entry_value
 
     if not raw:
         return
@@ -554,50 +466,37 @@ def apply_entry():
         return
 
     value = SYMBOLS.index(raw) + 1
-
-    # 초기 단서 보호
-    if (r, c) in st.session_state.locked:
-        st.session_state.entry_value = ""
-        return
-
     mode = st.session_state.board_mode
 
     if mode == "solve":
-
         st.session_state.board[r][c] = value
         st.session_state.solve_result = None
         st.session_state.entry_value = ""
         return
 
     if mode == "puzzle":
-
         if st.session_state.board[r][c] != 0:
             st.session_state.entry_value = ""
             return
 
         if value == st.session_state.solution[r][c]:
-
             st.session_state.board[r][c] = value
-
         else:
-
-            st.session_state.lives -= 1
-
-            if st.session_state.lives <= 0:
-                st.session_state.lives = 0
+            st.session_state.lives = max(
+                0, st.session_state.lives - 1
+            )
+            if st.session_state.lives == 0:
                 st.session_state.game_over = True
 
         st.session_state.entry_value = ""
         return
 
     if mode == "versus":
-
         if st.session_state.phase != "active":
             st.session_state.entry_value = ""
             return
 
         if time.time() >= st.session_state.deadline:
-
             st.session_state.winner = 3 - st.session_state.player
             st.session_state.phase = "finished"
             st.session_state.finish_reason = "시간 초과"
@@ -609,7 +508,6 @@ def apply_entry():
             return
 
         if value != st.session_state.solution[r][c]:
-
             st.session_state.winner = 3 - st.session_state.player
             st.session_state.phase = "finished"
             st.session_state.finish_reason = "오답"
@@ -618,38 +516,27 @@ def apply_entry():
 
         st.session_state.board[r][c] = value
 
-        # 모든 칸 완료
         if all(
             v != 0
             for row in st.session_state.board
             for v in row
         ):
-
             if st.session_state.level_index == 3:
-
                 st.session_state.winner = st.session_state.player
                 st.session_state.phase = "champion"
                 st.session_state.entry_value = ""
                 return
 
             st.session_state.level_index += 1
-
-            # 마지막 정답자부터 다음 난이도 시작
             make_versus_level()
-
             return
 
-        # 상대에게 턴 전달
         st.session_state.player = 3 - st.session_state.player
-
-        st.session_state.turn_start = time.time()
         st.session_state.deadline = time.time() + 20
-
         st.session_state.entry_value = ""
 
 
-def show_entry(n, mode):
-
+def show_entry(n):
     selected = st.session_state.selected
 
     if selected is None:
@@ -659,18 +546,14 @@ def show_entry(n, mode):
     r, c = selected
 
     if (r, c) in st.session_state.locked:
-
         st.info("초기 단서는 변경할 수 없습니다.")
         return
 
     if st.session_state.board[r][c] != 0:
-
         st.info("이미 숫자가 입력된 셀입니다.")
         return
 
-    st.markdown(
-        f"**선택한 셀: {r+1}행 {c+1}열**"
-    )
+    st.write(f"선택한 셀: {r+1}행 {c+1}열")
 
     st.selectbox(
         "입력할 숫자",
@@ -682,12 +565,11 @@ def show_entry(n, mode):
     )
 
 
-# =========================================================
-# 남은 개수 표시
-# =========================================================
+# =====================================================
+# 남은 숫자
+# =====================================================
 
 def show_remaining(n):
-
     st.markdown("#### 숫자별 남은 개수")
 
     counts = {
@@ -702,13 +584,9 @@ def show_remaining(n):
     cols = st.columns(n, gap="small")
 
     for i, col in enumerate(cols, start=1):
-
         remaining = n - counts[i]
 
         with col:
-
-            # HTML을 한 줄로 출력하여 코드 블록으로
-            # 오인되는 문제 방지
             st.markdown(
                 f'<div class="remaining-number">'
                 f'<div class="digit">{SYMBOLS[i-1]}</div>'
@@ -718,66 +596,27 @@ def show_remaining(n):
             )
 
 
-# =========================================================
-# 1vs1 퍼즐 생성
-# =========================================================
+# =====================================================
+# 1vs1 문제 생성
+# =====================================================
 
 def make_versus_level():
-
     difficulty = DIFFICULTIES[
         st.session_state.level_index
     ]
 
-    puzzle, solution = generate_puzzle(
-        CLUES[difficulty]
-    )
+    puzzle, solution = generate_puzzle(CLUES[difficulty])
 
     initialize_board(puzzle, "versus")
 
     st.session_state.solution = solution
-
     st.session_state.deadline = time.time() + 20
-    st.session_state.turn_start = time.time()
-
     st.session_state.phase = "active"
 
 
-# =========================================================
-# 타이머
-# =========================================================
-
-def show_timer():
-
-    remaining = max(
-        0,
-        st.session_state.deadline - time.time()
-    )
-
-    percentage = remaining / 20 * 100
-
-    color = "#e44b4b" if remaining <= 5 else "#4285d4"
-
-    st.markdown(
-        f"""
-        <div style="display:flex;justify-content:space-between;">
-            <b>남은 시간</b>
-            <b>{remaining:.1f}초</b>
-        </div>
-        <div class="timer-background">
-            <div class="timer-progress"
-                 style="width:{percentage}%;background:{color};">
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    return remaining
-
-
-# =========================================================
-# 초기 세션 상태
-# =========================================================
+# =====================================================
+# 세션 초기화
+# =====================================================
 
 defaults = {
     "page": "home",
@@ -794,14 +633,13 @@ defaults = {
 }
 
 for key, value in defaults.items():
-
     if key not in st.session_state:
         st.session_state[key] = value
 
 
-# =========================================================
+# =====================================================
 # 메인 화면
-# =========================================================
+# =====================================================
 
 if st.session_state.page == "home":
 
@@ -810,21 +648,19 @@ if st.session_state.page == "home":
     a, b = st.columns(2)
 
     with a:
-
         if st.button("풀이", type="primary"):
             st.session_state.page = "solve_select"
             st.rerun()
 
     with b:
-
         if st.button("문제", type="primary"):
             st.session_state.page = "puzzle_select"
             st.rerun()
 
 
-# =========================================================
-# 풀이 규격 선택
-# =========================================================
+# =====================================================
+# 풀이 규격
+# =====================================================
 
 elif st.session_state.page == "solve_select":
 
@@ -838,17 +674,10 @@ elif st.session_state.page == "solve_select":
     )
 
     if st.button("빈 판 만들기", type="primary"):
-
-        initialize_board(
-            [[0] * n for _ in range(n)],
-            "solve"
-        )
-
+        initialize_board([[0]*n for _ in range(n)], "solve")
         st.session_state.solve_n = n
         st.session_state.solve_result = None
-
         st.session_state.page = "solve_board"
-
         st.rerun()
 
     if st.button("처음으로"):
@@ -856,9 +685,9 @@ elif st.session_state.page == "solve_select":
         st.rerun()
 
 
-# =========================================================
-# 풀이 화면
-# =========================================================
+# =====================================================
+# 풀이
+# =====================================================
 
 elif st.session_state.page == "solve_board":
 
@@ -866,110 +695,71 @@ elif st.session_state.page == "solve_board":
 
     st.title(f"{n} × {n} 스도쿠")
 
-    draw_board(n, "solve")
-
-    show_entry(n, "solve")
-
+    draw_board(n)
+    show_entry(n)
     show_remaining(n)
 
     if st.button("완료", type="primary"):
 
-        board = [
-            row[:] for row in st.session_state.board
-        ]
-
+        board = [row[:] for row in st.session_state.board]
         box = 3 if n == 9 else 4
 
         clue_count = sum(
-            v != 0
-            for row in board
-            for v in row
+            v != 0 for row in board for v in row
         )
 
-        valid, reason = validate(
-            board, n, box
-        )
+        valid, reason = validate(board, n, box)
 
         if not valid:
-
-            st.session_state.solve_result = (
-                "불가능",
-                f"규칙 위반: {reason}"
-            )
+            result = ("불가능", f"규칙 위반: {reason}")
 
         elif clue_count < MIN_CLUES[n]:
-
-            st.session_state.solve_result = (
+            result = (
                 "불가능",
                 f"단서 부족: 현재 {clue_count}개입니다. "
                 f"최소 {MIN_CLUES[n]}개가 필요합니다."
             )
 
         else:
-
             count, solution, complete = solve_count(
                 [row[:] for row in board],
-                n,
-                box,
-                limit=2
+                n, box, limit=2
             )
 
             if not complete:
-
                 result = (
                     "불가능",
                     "풀이 검증 시간 초과: 단서를 더 입력해 주십시오."
                 )
-
             elif count == 0:
-
                 result = (
                     "불가능",
                     "규칙 위반: 입력한 단서로 해답을 만들 수 없습니다."
                 )
-
             elif count >= 2:
-
                 result = (
                     "불가능",
                     "단서 부족: 가능한 해답이 여러 개입니다."
                 )
-
             else:
+                result = ("가능", solution)
 
-                result = (
-                    "가능",
-                    solution
-                )
-
-            st.session_state.solve_result = result
-
+        st.session_state.solve_result = result
         st.rerun()
 
     result = st.session_state.solve_result
 
     if result:
-
         if result[0] == "불가능":
-
             st.error("풀이 불가능")
             st.warning(result[1])
-
         else:
-
             st.success("풀이 완료")
-
-            solution = result[1]
-
             st.markdown("### 완성된 스도쿠")
 
-            for row in solution:
-
+            for row in result[1]:
                 st.write(
-                    "　".join(
-                        SYMBOLS[v-1]
-                        for v in row
-                    )
+                    "　".join(SYMBOLS[v-1] for v in row)
                 )
 
     if st.button("처음으로"):
@@ -977,9 +767,9 @@ elif st.session_state.page == "solve_board":
         st.rerun()
 
 
-# =========================================================
-# 문제 난이도 선택
-# =========================================================
+# =====================================================
+# 문제 선택
+# =====================================================
 
 elif st.session_state.page == "puzzle_select":
 
@@ -991,39 +781,28 @@ elif st.session_state.page == "puzzle_select":
         horizontal=True
     )
 
-    st.write(
-        f"초기 단서: {CLUES[difficulty]}개"
-    )
+    st.write(f"초기 단서: {CLUES[difficulty]}개")
 
     if st.button("문제 생성", type="primary"):
-
-        puzzle, solution = generate_puzzle(
-            CLUES[difficulty]
-        )
-
+        puzzle, solution = generate_puzzle(CLUES[difficulty])
         initialize_board(puzzle, "puzzle")
 
         st.session_state.solution = solution
         st.session_state.lives = 3
         st.session_state.game_over = False
-
+        st.session_state.difficulty = difficulty
         st.session_state.page = "puzzle_play"
-
         st.rerun()
 
     st.divider()
-
     st.subheader("1 vs 1 스도쿠 대전")
 
     if st.button("1 vs 1 시작", type="primary"):
-
         st.session_state.level_index = 0
         st.session_state.player = 1
         st.session_state.winner = None
         st.session_state.phase = "rules"
-
         st.session_state.page = "versus"
-
         st.rerun()
 
     if st.button("처음으로"):
@@ -1031,9 +810,9 @@ elif st.session_state.page == "puzzle_select":
         st.rerun()
 
 
-# =========================================================
-# 일반 문제 플레이
-# =========================================================
+# =====================================================
+# 일반 문제
+# =====================================================
 
 elif st.session_state.page == "puzzle_play":
 
@@ -1047,15 +826,11 @@ elif st.session_state.page == "puzzle_play":
     )
 
     if st.session_state.game_over:
-
         st.error("실패했습니다. 목숨을 모두 사용했습니다.")
 
     else:
-
-        draw_board(9, "puzzle")
-
-        show_entry(9, "puzzle")
-
+        draw_board(9)
+        show_entry(9)
         show_remaining(9)
 
         if all(
@@ -1063,36 +838,30 @@ elif st.session_state.page == "puzzle_play":
             for row in st.session_state.board
             for v in row
         ):
-
             st.success("정답입니다!")
 
     a, b = st.columns(2)
 
     with a:
-
         if st.button("새 문제"):
             st.session_state.page = "puzzle_select"
             st.rerun()
 
     with b:
-
         if st.button("처음으로"):
             st.session_state.page = "home"
             st.rerun()
 
 
-# =========================================================
-# 1vs1 대전
-# =========================================================
+# =====================================================
+# 1vs1
+# =====================================================
 
 elif st.session_state.page == "versus":
 
     st.title("1 vs 1 스도쿠 대전")
 
-    # -----------------------------------------------------
     # 룰 설명
-    # -----------------------------------------------------
-
     if st.session_state.phase == "rules":
 
         st.markdown("""
@@ -1101,10 +870,10 @@ elif st.session_state.page == "versus":
         1. Player 1부터 시작합니다.<br>
         2. 각 턴에는 20초가 주어집니다.<br>
         3. 제한 시간 안에 한 칸을 정확하게 채우면 상대 차례가 됩니다.<br>
-        4. 오답을 입력하거나 제한 시간이 끝나면 패배합니다.<br>
+        4. 오답을 입력하거나 시간이 끝나면 패배합니다.<br>
         5. 모든 칸을 채우면 다음 난이도로 올라갑니다.<br>
         6. 난이도는 하 → 중 → 상 → 최상 순서입니다.<br>
-        7. 난이도가 올라가도 마지막으로 성공한 플레이어가 먼저 시작합니다.
+        7. 마지막으로 정답을 입력한 플레이어가 다음 난이도를 시작합니다.
         </div>
         """, unsafe_allow_html=True)
 
@@ -1113,83 +882,70 @@ elif st.session_state.page == "versus":
             st.session_state.level_index = 0
             st.session_state.player = 1
 
-            st.session_state.phase = "ready"
-            st.session_state.ready_until = time.time() + 3
+            # 카운트다운을 화면에 직접 출력
+            countdown_area = st.empty()
 
-            st.rerun()
+            for number in [3, 2, 1]:
+                countdown_area.markdown(
+                    f"""
+                    <div style="text-align:center;padding:25px;">
+                        <h2>대전 준비</h2>
+                        <div style="font-size:76px;font-weight:800;">
+                            {number}
+                        </div>
+                        <p>Player 1부터 시작합니다.</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                time.sleep(1)
 
-    # -----------------------------------------------------
-    # 카운트다운
-    # -----------------------------------------------------
-
-    elif st.session_state.phase == "ready":
-
-        st_autorefresh(
-            interval=100,
-            key="ready_timer"
-        )
-
-        remaining = (
-            st.session_state.ready_until - time.time()
-        )
-
-        if remaining <= 0:
+            countdown_area.empty()
 
             make_versus_level()
-
             st.rerun()
 
-        else:
-
-            countdown = math.ceil(remaining)
-
-            st.markdown(
-                f"""
-                <div style="text-align:center;padding:35px 0;">
-                    <h2>대전 준비</h2>
-                    <div style="font-size:72px;font-weight:800;">
-                        {countdown}
-                    </div>
-                    <p>Player 1부터 시작합니다.</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    # -----------------------------------------------------
     # 대전 진행
-    # -----------------------------------------------------
-
     elif st.session_state.phase == "active":
 
         st_autorefresh(
-            interval=100,
-            key="active_timer"
+            interval=250,
+            key=f"active_timer_{st.session_state.level_index}"
         )
 
-        remaining = (
+        remaining = max(
+            0,
             st.session_state.deadline - time.time()
         )
 
         if remaining <= 0:
-
-            st.session_state.winner = (
-                3 - st.session_state.player
-            )
-
+            st.session_state.winner = 3 - st.session_state.player
             st.session_state.phase = "finished"
             st.session_state.finish_reason = "시간 초과"
-
             st.rerun()
 
-        show_timer()
+        percentage = remaining / 20 * 100
+        color = "#e44b4b" if remaining <= 5 else "#4285d4"
 
         st.markdown(
             f"""
-            <div class="player-label">
-                Player {st.session_state.player} 차례
+            <div style="display:flex;justify-content:space-between;">
+                <b>남은 시간</b>
+                <b>{remaining:.1f}초</b>
+            </div>
+            <div class="timer-background">
+                <div class="timer-progress"
+                     style="width:{percentage}%;background:{color};">
+                </div>
             </div>
             """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            f'<div class="player-label">'
+            f'Player {st.session_state.player} 차례'
+            f'</div>',
             unsafe_allow_html=True
         )
 
@@ -1202,20 +958,14 @@ elif st.session_state.page == "versus":
             f"({st.session_state.level_index + 1}/4)"
         )
 
-        draw_board(9, "versus")
-
-        show_entry(9, "versus")
-
+        draw_board(9)
+        show_entry(9)
         show_remaining(9)
 
-    # -----------------------------------------------------
-    # 승패
-    # -----------------------------------------------------
-
+    # 패배
     elif st.session_state.phase == "finished":
 
         st.title("대전 종료")
-
         st.error(
             f"Player {st.session_state.winner} 승리!"
         )
@@ -1227,25 +977,17 @@ elif st.session_state.page == "versus":
         )
 
         if st.button("다시 대전하기", type="primary"):
-
             st.session_state.phase = "rules"
-            st.session_state.page = "versus"
-
             st.rerun()
 
         if st.button("메인 화면"):
-
             st.session_state.page = "home"
             st.rerun()
 
-    # -----------------------------------------------------
     # 최종 우승
-    # -----------------------------------------------------
-
     elif st.session_state.phase == "champion":
 
         st.title("최종 우승")
-
         st.balloons()
 
         st.success(
@@ -1257,13 +999,9 @@ elif st.session_state.page == "versus":
         )
 
         if st.button("다시 대전하기", type="primary"):
-
             st.session_state.phase = "rules"
-            st.session_state.page = "versus"
-
             st.rerun()
 
         if st.button("메인 화면"):
-
             st.session_state.page = "home"
             st.rerun()
