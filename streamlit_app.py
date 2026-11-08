@@ -1,18 +1,19 @@
 
 import random
+import time
 import pandas as pd
 import streamlit as st
-from st_aggrid import AgGrid, GridUpdateMode, DataReturnMode, JsCode
+from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(
-    page_title="스도쿠",
-    page_icon="🔢",
-    layout="centered"
-)
+st.set_page_config(page_title="스도쿠", page_icon="🔢", layout="wide")
 
 SYMBOLS = "123456789ABCDEFG"
+DIFFICULTIES = ["하", "중", "상", "최상"]
+CLUES = {"하": 26, "중": 23, "상": 20, "최상": 17}
 
-# 유일해를 가지는 17단서 스도쿠
+# 16x16 풀이 시 단서가 너무 적은 입력을 거르기 위한 앱 기준
+MIN_CLUES = {9: 17, 16: 40}
+
 SEED = (
     "000000010"
     "400000000"
@@ -25,60 +26,92 @@ SEED = (
     "000806000"
 )
 
-
-# ==================================================
-# 디자인
-# ==================================================
-
 st.markdown("""
 <style>
 .block-container {
-    max-width: 760px;
-    padding: 1.5rem 0.7rem;
+    max-width: 1100px;
+    padding: 1.2rem 0.6rem;
 }
-
 h1, h2, h3 {
     text-align: center;
 }
-
 div.stButton > button {
     width: 100%;
-    min-height: 44px;
-    font-size: 17px;
+    min-height: 42px;
+    font-size: 16px;
 }
-
 div[data-testid="stHorizontalBlock"] {
-    gap: 4px !important;
+    gap: 2px !important;
 }
-
 div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
     padding: 0 !important;
     min-width: 0 !important;
 }
-
-.ag-root-wrapper {
-    border: none !important;
+div[data-testid="stTextInput"] {
+    margin: 0 !important;
+    padding: 0 !important;
 }
-
-.ag-header {
-    display: none !important;
+div[data-testid="stTextInput"] input {
+    height: 38px !important;
+    min-height: 38px !important;
+    text-align: center !important;
+    font-size: 19px !important;
+    font-weight: 500 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    border: 1px solid #999 !important;
+    background: white !important;
+    color: #234f91 !important;
 }
-
-.ag-cell {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+div[data-testid="stTextInput"] input:focus {
+    background: #e8dcff !important;
+    border: 2px solid #8d62d5 !important;
+    box-shadow: none !important;
+}
+div.st-key-selected-cell div[data-testid="stTextInput"] input {
+    background: #e8dcff !important;
+}
+.given-cell input {
+    background: #e9eef5 !important;
+    color: #254f91 !important;
+    font-weight: 700 !important;
+}
+.timer-outer {
+    width: 100%;
+    height: 17px;
+    background: #dedede;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 8px 0 12px 0;
+}
+.timer-inner {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.15s linear;
+}
+.player-label {
+    text-align: center;
+    font-size: 23px;
+    font-weight: 700;
+    margin: 5px 0;
+}
+.rule-card {
+    padding: 16px;
+    border: 1px solid #b8c8dc;
+    border-radius: 10px;
+    background: #f0f6ff;
+    color: #24364c;
+    line-height: 1.8;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ==================================================
+# =========================================================
 # 스도쿠 풀이 엔진
-# ==================================================
+# =========================================================
 
 def candidates(board, r, c, n, box):
-
     used = set(board[r])
     used.update(board[i][c] for i in range(n))
 
@@ -93,1020 +126,910 @@ def candidates(board, r, c, n, box):
 
 
 def find_empty(board, n, box):
-
     best = None
-    best_opts = None
+    best_options = None
 
     for r in range(n):
         for c in range(n):
-
             if board[r][c] != 0:
                 continue
 
-            opts = candidates(board, r, c, n, box)
+            options = candidates(board, r, c, n, box)
 
-            if not opts:
+            if not options:
                 return r, c, set()
 
-            if best is None or len(opts) < len(best_opts):
-
+            if best is None or len(options) < len(best_options):
                 best = (r, c)
-                best_opts = opts
+                best_options = options
 
-                if len(opts) == 1:
-                    return r, c, opts
+                if len(options) == 1:
+                    return r, c, options
 
     if best is None:
         return None, None, None
 
-    return best[0], best[1], best_opts
+    return best[0], best[1], best_options
 
 
-def solve_count(board, n, box, limit=1):
+def solve_count(board, n, box, limit=2, max_nodes=300000,
+                max_seconds=4.0):
+    """
+    limit=2:
+      0개: 해답 없음
+      1개: 유일해인지 확인 가능
+      2개: 복수 해답
 
+    탐색 한도에 도달하면 유일해라고 잘못 판정하지 않습니다.
+    """
     count = 0
     first_solution = None
+    nodes = 0
+    start = time.monotonic()
+    exhausted = True
 
     def backtrack():
-
-        nonlocal count, first_solution
+        nonlocal count, first_solution, nodes, exhausted
 
         if count >= limit:
             return
 
-        r, c, opts = find_empty(board, n, box)
+        nodes += 1
+
+        if nodes > max_nodes or time.monotonic() - start > max_seconds:
+            exhausted = False
+            return
+
+        r, c, options = find_empty(board, n, box)
 
         if r is None:
-
             count += 1
-
             if first_solution is None:
                 first_solution = [row[:] for row in board]
-
             return
 
-        if not opts:
+        if not options:
             return
 
-        for v in sorted(opts):
-
-            board[r][c] = v
-
+        for value in options:
+            board[r][c] = value
             backtrack()
-
             board[r][c] = 0
 
-            if count >= limit:
+            if count >= limit or not exhausted:
                 return
 
     backtrack()
 
-    return count, first_solution
+    return count, first_solution, exhausted
 
 
 def validate(board, n, box):
-
     for r in range(n):
-
-        vals = [v for v in board[r] if v]
-
-        if len(vals) != len(set(vals)):
+        values = [v for v in board[r] if v]
+        if len(values) != len(set(values)):
             return False, f"{r + 1}행에 중복 숫자가 있습니다."
 
     for c in range(n):
-
-        vals = [
-            board[r][c]
-            for r in range(n)
-            if board[r][c]
-        ]
-
-        if len(vals) != len(set(vals)):
+        values = [board[r][c] for r in range(n) if board[r][c]]
+        if len(values) != len(set(values)):
             return False, f"{c + 1}열에 중복 숫자가 있습니다."
 
     for br in range(0, n, box):
-
         for bc in range(0, n, box):
-
-            vals = [
+            values = [
                 board[r][c]
                 for r in range(br, br + box)
                 for c in range(bc, bc + box)
                 if board[r][c]
             ]
 
-            if len(vals) != len(set(vals)):
+            if len(values) != len(set(values)):
                 return False, "같은 구역에 중복 숫자가 있습니다."
 
     return True, ""
 
 
-# ==================================================
-# 데이터 변환
-# ==================================================
+# =========================================================
+# 퍼즐 생성
+# =========================================================
 
-def to_dataframe(board):
-
-    return pd.DataFrame([
-        {
-            f"c{c}": SYMBOLS[v - 1] if v else ""
-            for c, v in enumerate(row)
-        }
-        for row in board
-    ])
-
-
-def read_dataframe(data, n):
-
-    board = []
-
-    for r in range(n):
-
-        row = []
-
-        for c in range(n):
-
-            raw = data.iloc[r][f"c{c}"]
-
-            raw = "" if pd.isna(raw) else str(raw).strip().upper()
-
-            if raw == "":
-                row.append(0)
-
-            elif len(raw) == 1 and raw in SYMBOLS[:n]:
-
-                row.append(SYMBOLS.index(raw) + 1)
-
-            else:
-
-                raise ValueError(
-                    f"{r + 1}행 {c + 1}열에는 "
-                    f"한 글자만 입력할 수 있습니다."
-                )
-
-        board.append(row)
-
-    return board
-
-
-def reset_grid(board):
-
-    st.session_state.grid_version += 1
-
-    st.session_state.grid_data = to_dataframe(board)
-
-
-# ==================================================
-# 스도쿠 판
-# ==================================================
-
-def draw_grid(board, n, box, locked=None, key="grid"):
-
-    locked = locked or set()
-
-    given_coords = [
-        f"{r},{c}"
-        for r, c in locked
+def generate_puzzle(target_clues):
+    seed = [
+        [int(x) for x in SEED[r * 9:(r + 1) * 9]]
+        for r in range(9)
     ]
 
-    # 한 글자 입력을 즉시 셀에 반영
-    on_key_down = JsCode("""
-    function(params) {
-
-        const e = params.event;
-
-        if (!e) return;
-
-        const r = params.node.rowIndex;
-
-        const c = Number(
-            params.column.getColId().substring(1)
-        );
-
-        const position = r + ',' + c;
-
-        // 처음 주어진 단서는 수정 금지
-        if (params.context.givens.includes(position)) {
-            return;
-        }
-
-        const key = e.key;
-        const allowed = params.context.allowed;
-
-        // 삭제
-        if (key === 'Backspace' || key === 'Delete') {
-
-            e.preventDefault();
-
-            params.node.setDataValue(
-                params.column.getColId(),
-                ''
-            );
-
-            params.api.refreshCells({force: true});
-
-            return;
-        }
-
-        // 숫자 또는 허용된 문자 한 글자만 입력
-        if (
-            key.length === 1 &&
-            allowed.includes(key.toUpperCase())
-        ) {
-
-            e.preventDefault();
-
-            params.node.setDataValue(
-                params.column.getColId(),
-                key.toUpperCase()
-            );
-
-            params.api.refreshCells({force: true});
-        }
-    }
-    """)
-
-    # 선택한 셀 하나만 진한 색
-    cell_style = JsCode("""
-    function(params) {
-
-        const r = params.node.rowIndex;
-
-        const c = Number(
-            params.column.getColId().substring(1)
-        );
-
-        const box = params.context.box;
-
-        const style = {
-
-            textAlign: 'center',
-
-            padding: '0',
-
-            fontSize:
-                params.context.n === 9
-                ? '24px'
-                : '18px',
-
-            borderLeft:
-                c === 0
-                ? '2px solid #222'
-                : '1px solid #aaa',
-
-            borderTop:
-                r === 0
-                ? '2px solid #222'
-                : '1px solid #aaa',
-
-            borderRight:
-                (c + 1) % box === 0
-                ? '2px solid #222'
-                : '1px solid #aaa',
-
-            borderBottom:
-                (r + 1) % box === 0
-                ? '2px solid #222'
-                : '1px solid #aaa'
-        };
-
-        const focus = params.api.getFocusedCell();
-
-        if (
-            focus &&
-            focus.rowIndex === r &&
-            Number(focus.column.getColId().substring(1)) === c
-        ) {
-
-            style.backgroundColor = '#91c5fa';
-
-        }
-
-        if (
-            params.context.givens.includes(r + ',' + c)
-        ) {
-
-            style.fontWeight = 'bold';
-
-            style.color = '#254f91';
-
-        }
-
-        return style;
-    }
-    """)
-
-    # 단서 셀은 수정 불가, 나머지는 키보드 이벤트로 입력
-    column_defs = []
-
-    for c in range(n):
-
-        column_defs.append({
-
-            "field": f"c{c}",
-
-            "headerName": "",
-
-            "width": 48 if n == 9 else 34,
-
-            "minWidth": 24,
-
-            "maxWidth": 50 if n == 9 else 36,
-
-            "editable": False,
-
-            "cellStyle": cell_style,
-
-            "resizable": False,
-
-            "sortable": False,
-
-            "suppressMovable": True,
-
-        })
-
-    options = {
-
-        "columnDefs": column_defs,
-
-        "rowHeight": 48 if n == 9 else 34,
-
-        "headerHeight": 0,
-
-        "context": {
-
-            "givens": given_coords,
-
-            "box": box,
-
-            "n": n,
-
-            "allowed": SYMBOLS[:n],
-
-        },
-
-        "suppressRowHoverHighlight": True,
-
-        "suppressMovableColumns": True,
-
-        "suppressCellFocus": False,
-
-        "suppressClickEdit": True,
-
-        "onCellKeyDown": on_key_down,
-
-        "onCellClicked": JsCode("""
-        function(params) {
-            params.api.refreshCells({force: true});
-        }
-        """),
-
-    }
-
-    result = AgGrid(
-
-        to_dataframe(board),
-
-        gridOptions=options,
-
-        height=n * (48 if n == 9 else 34) + 4,
-
-        width="100%",
-
-        fit_columns_on_grid_load=True,
-
-        allow_unsafe_jscode=True,
-
-        update_mode=GridUpdateMode.VALUE_CHANGED,
-
-        data_return_mode=DataReturnMode.AS_INPUT,
-
-        key=key,
-
-        theme="alpine",
-
+    count, seed_solution, complete = solve_count(
+        [row[:] for row in seed],
+        9, 3, limit=2
     )
 
-    return result
+    if count != 1 or not complete:
+        raise RuntimeError("기본 퍼즐의 유일해 검증에 실패했습니다.")
+
+    def shuffled_groups():
+        groups = [
+            list(range(3 * i, 3 * i + 3))
+            for i in range(3)
+        ]
+        random.shuffle(groups)
+        return [v for group in groups for v in random.sample(group, 3)]
+
+    rows = shuffled_groups()
+    cols = shuffled_groups()
+
+    digits = list(range(1, 10))
+    random.shuffle(digits)
+    mapping = {i + 1: digits[i] for i in range(9)}
+
+    transpose = random.choice([True, False])
+
+    def transform(board):
+        result = [[board[r][c] for c in cols] for r in rows]
+
+        if transpose:
+            result = [list(row) for row in zip(*result)]
+
+        return [
+            [mapping[v] if v else 0 for v in row]
+            for row in result
+        ]
+
+    puzzle = transform(seed)
+    solution = transform(seed_solution)
+
+    empty = [
+        (r, c)
+        for r in range(9)
+        for c in range(9)
+        if puzzle[r][c] == 0
+    ]
+
+    random.shuffle(empty)
+
+    for r, c in empty[:target_clues - 17]:
+        puzzle[r][c] = solution[r][c]
+
+    assert sum(v != 0 for row in puzzle for v in row) == target_clues
+
+    return puzzle, solution
 
 
-# ==================================================
-# 숫자별 남은 개수
-# ==================================================
+# =========================================================
+# 상태 및 셀 입력 관리
+# =========================================================
 
-def show_remaining(board, n):
+def clear_cell_keys(n):
+    for r in range(n):
+        for c in range(n):
+            key = f"cell_{r}_{c}"
+            if key in st.session_state:
+                del st.session_state[key]
 
+
+def prepare_board(board, mode):
+    n = len(board)
+    clear_cell_keys(n)
+
+    st.session_state.board = [row[:] for row in board]
+    st.session_state.selected = None
+    st.session_state.board_mode = mode
+
+
+def cell_changed(r, c, mode):
+    key = f"cell_{r}_{c}"
+    raw = str(st.session_state.get(key, "")).strip().upper()
+
+    st.session_state.selected = (r, c)
+
+    n = len(st.session_state.board)
+    allowed = SYMBOLS[:n]
+
+    if raw == "":
+        if mode == "solve":
+            st.session_state.board[r][c] = 0
+        return
+
+    if len(raw) != 1 or raw not in allowed:
+        st.session_state[key] = ""
+        return
+
+    value = SYMBOLS.index(raw) + 1
+
+    if mode == "solve":
+        st.session_state.board[r][c] = value
+        st.session_state.solve_result = None
+        return
+
+    if mode == "puzzle":
+        if (r, c) in st.session_state.locked:
+            st.session_state[key] = ""
+            return
+
+        if st.session_state.board[r][c] != 0:
+            st.session_state[key] = SYMBOLS[
+                st.session_state.board[r][c] - 1
+            ]
+            return
+
+        if value == st.session_state.solution[r][c]:
+            st.session_state.board[r][c] = value
+            return
+
+        st.session_state.board[r][c] = 0
+        st.session_state[key] = ""
+
+        st.session_state.lives -= 1
+
+        if st.session_state.lives <= 0:
+            st.session_state.lives = 0
+            st.session_state.game_over = True
+
+        return
+
+    if mode == "versus":
+        if st.session_state.phase != "active":
+            st.session_state[key] = ""
+            return
+
+        if time.time() >= st.session_state.deadline:
+            st.session_state.winner = (
+                2 if st.session_state.player == 1 else 1
+            )
+            st.session_state.phase = "finished"
+            st.session_state.finish_reason = "시간 초과"
+            st.session_state[key] = ""
+            return
+
+        if (r, c) in st.session_state.locked:
+            st.session_state[key] = ""
+            return
+
+        if st.session_state.board[r][c] != 0:
+            st.session_state[key] = SYMBOLS[
+                st.session_state.board[r][c] - 1
+            ]
+            return
+
+        if value != st.session_state.solution[r][c]:
+            st.session_state.winner = (
+                2 if st.session_state.player == 1 else 1
+            )
+            st.session_state.phase = "finished"
+            st.session_state.finish_reason = "오답"
+            st.session_state[key] = ""
+            return
+
+        # 정답 입력
+        st.session_state.board[r][c] = value
+
+        # 모든 칸을 맞혔는지 확인
+        if all(
+            v != 0
+            for row in st.session_state.board
+            for v in row
+        ):
+            next_level = st.session_state.level_index + 1
+
+            if next_level >= len(DIFFICULTIES):
+                st.session_state.phase = "champion"
+                st.session_state.winner = st.session_state.player
+                return
+
+            # 다음 난이도. 성공한 플레이어가 계속 시작합니다.
+            st.session_state.level_index = next_level
+            st.session_state.player = st.session_state.player
+            make_versus_level()
+            return
+
+        # 성공했으면 상대에게 턴 이동
+        st.session_state.player = (
+            2 if st.session_state.player == 1 else 1
+        )
+        st.session_state.turn_start = time.time()
+        st.session_state.deadline = time.time() + 20
+
+
+# =========================================================
+# 게임 초기화
+# =========================================================
+
+def make_versus_level():
+    difficulty = DIFFICULTIES[st.session_state.level_index]
+    puzzle, solution = generate_puzzle(CLUES[difficulty])
+
+    prepare_board(puzzle, "versus")
+
+    st.session_state.solution = solution
+    st.session_state.locked = {
+        (r, c)
+        for r in range(9)
+        for c in range(9)
+        if puzzle[r][c] != 0
+    }
+
+    st.session_state.turn_start = time.time()
+    st.session_state.deadline = time.time() + 20
+    st.session_state.phase = "active"
+
+
+# =========================================================
+# 스도쿠 판 표시
+# =========================================================
+
+def draw_board(n, mode):
+    box = 3 if n == 9 else 4
+    selected = st.session_state.get("selected")
+    locked = st.session_state.get("locked", set())
+
+    for r in range(n):
+        cols = st.columns(n, gap="small")
+
+        for c in range(n):
+            key = f"cell_{r}_{c}"
+            value = st.session_state.board[r][c]
+
+            if key not in st.session_state:
+                st.session_state[key] = (
+                    SYMBOLS[value - 1] if value else ""
+                )
+
+            is_selected = selected == (r, c)
+            is_given = (r, c) in locked
+
+            background = (
+                "#e8dcff" if is_selected
+                else "#dceeff" if selected and (
+                    selected[0] == r or selected[1] == c
+                )
+                else "#e9eef5" if is_given
+                else "#ffffff"
+            )
+
+            color = "#254f91" if is_given else "#222222"
+
+            border_left = (
+                "2px solid #222"
+                if c % box == 0
+                else "1px solid #aaa"
+            )
+
+            border_top = (
+                "2px solid #222"
+                if r % box == 0
+                else "1px solid #aaa"
+            )
+
+            border_right = (
+                "2px solid #222"
+                if (c + 1) % box == 0
+                else "1px solid #aaa"
+            )
+
+            border_bottom = (
+                "2px solid #222"
+                if (r + 1) % box == 0
+                else "1px solid #aaa"
+            )
+
+            with cols[c]:
+                st.markdown(
+                    f"""
+                    <style>
+                    div.st-key-{key} input {{
+                        background: {background} !important;
+                        color: {color} !important;
+                        border-left: {border_left} !important;
+                        border-top: {border_top} !important;
+                        border-right: {border_right} !important;
+                        border-bottom: {border_bottom} !important;
+                        font-weight: {'700' if is_given else '500'} !important;
+                    }}
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.text_input(
+                    f"{r+1}-{c+1}",
+                    key=key,
+                    max_chars=1,
+                    label_visibility="collapsed",
+                    disabled=is_given,
+                    on_change=cell_changed,
+                    args=(r, c, mode),
+                )
+
+
+# =========================================================
+# 남은 숫자 표시
+# =========================================================
+
+def show_remaining(n):
     st.markdown("#### 숫자별 남은 개수")
 
     counts = {
-
         v: sum(
             cell == v
-            for row in board
+            for row in st.session_state.board
             for cell in row
         )
-
         for v in range(1, n + 1)
-
     }
 
     cols = st.columns(n, gap="small")
 
     for i, col in enumerate(cols, start=1):
-
         remaining = n - counts[i]
 
         with col:
-
             st.markdown(
                 f"""
                 <div style="
                     border:1px solid #b5c7df;
                     border-radius:5px;
                     text-align:center;
-                    padding:5px 0;
+                    padding:5px 1px;
                     background:#edf5ff;
                     color:#28548e;
                     line-height:1.2;
                 ">
-
                     <div style="
-                        font-size:25px;
+                        font-size:22px;
                         font-weight:700;
-                    ">
-                        {SYMBOLS[i-1]}
-                    </div>
-
+                    ">{SYMBOLS[i-1]}</div>
                     <div style="
                         font-size:12px;
                         margin-top:4px;
                         color:#52657d;
-                    ">
-                        {remaining}
-                    </div>
-
+                    ">{remaining}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
 
-# ==================================================
-# 문제 생성
-# ==================================================
+# =========================================================
+# 타이머
+# =========================================================
 
-def generate_puzzle(target_clues):
-
-    seed = [
-
-        [
-            int(x)
-            for x in SEED[r * 9:(r + 1) * 9]
-        ]
-
-        for r in range(9)
-
-    ]
-
-    count, seed_solution = solve_count(
-        [row[:] for row in seed],
-        9,
-        3,
-        limit=2
+def show_timer():
+    remaining = max(
+        0,
+        st.session_state.deadline - time.time()
     )
 
-    if count != 1:
-        raise RuntimeError("기본 퍼즐의 유일해 검증 실패")
+    percent = remaining / 20 * 100
 
-    def shuffled_groups():
-
-        groups = [
-            list(range(3*i, 3*i + 3))
-            for i in range(3)
-        ]
-
-        random.shuffle(groups)
-
-        return [
-            v
-            for g in groups
-            for v in random.sample(g, 3)
-        ]
-
-    rows = shuffled_groups()
-
-    cols = shuffled_groups()
-
-    digits = list(range(1, 10))
-
-    random.shuffle(digits)
-
-    mapping = {
-        i + 1: digits[i]
-        for i in range(9)
-    }
-
-    transpose = random.choice([True, False])
-
-    def transform(board):
-
-        result = [
-            [board[r][c] for c in cols]
-            for r in rows
-        ]
-
-        if transpose:
-            result = [
-                list(row)
-                for row in zip(*result)
-            ]
-
-        return [
-            [
-                mapping[v] if v else 0
-                for v in row
-            ]
-            for row in result
-        ]
-
-    puzzle = transform(seed)
-
-    solution = transform(seed_solution)
-
-    empty = [
-
-        (r, c)
-
-        for r in range(9)
-
-        for c in range(9)
-
-        if puzzle[r][c] == 0
-
-    ]
-
-    random.shuffle(empty)
-
-    for r, c in empty[:target_clues - 17]:
-
-        puzzle[r][c] = solution[r][c]
-
-    actual = sum(
-        v != 0
-        for row in puzzle
-        for v in row
-    )
-
-    assert actual == target_clues
-
-    return puzzle, solution
-
-
-# ==================================================
-# 상태 초기화
-# ==================================================
-
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-
-if "grid_version" not in st.session_state:
-    st.session_state.grid_version = 0
-
-
-# ==================================================
-# 첫 화면
-# ==================================================
-
-if st.session_state.page == "home":
-
-    st.title("스도쿠")
-
-    left, right = st.columns(2)
-
-    with left:
-
-        if st.button("풀이", type="primary"):
-
-            st.session_state.page = "solve_select"
-
-            st.rerun()
-
-    with right:
-
-        if st.button("문제", type="primary"):
-
-            st.session_state.page = "puzzle_select"
-
-            st.rerun()
-
-
-# ==================================================
-# 풀이 규격 선택
-# ==================================================
-
-elif st.session_state.page == "solve_select":
-
-    st.title("스도쿠 풀이")
-
-    n = st.radio(
-
-        "규격 선택",
-
-        [9, 16],
-
-        format_func=lambda x: f"{x} × {x}",
-
-        horizontal=True,
-
-    )
-
-    if st.button("빈 판 만들기", type="primary"):
-
-        st.session_state.solve_n = n
-
-        st.session_state.solve_board = [
-            [0] * n
-            for _ in range(n)
-        ]
-
-        st.session_state.solve_result = None
-
-        reset_grid(st.session_state.solve_board)
-
-        st.session_state.page = "solve_board"
-
-        st.rerun()
-
-    if st.button("처음으로"):
-
-        st.session_state.page = "home"
-
-        st.rerun()
-
-
-# ==================================================
-# 풀이 화면
-# ==================================================
-
-elif st.session_state.page == "solve_board":
-
-    n = st.session_state.solve_n
-
-    box = 3 if n == 9 else 4
-
-    st.title(f"{n} × {n} 스도쿠")
-
-    st.caption(
-        "셀을 선택한 후 숫자 한 개를 입력하십시오. "
-        "Enter 키는 필요하지 않습니다."
-    )
-
-    response = draw_grid(
-
-        st.session_state.solve_board,
-
-        n,
-
-        box,
-
-        key=f"solve_{st.session_state.grid_version}",
-
-    )
-
-    try:
-
-        live_board = read_dataframe(response["data"], n)
-
-    except (ValueError, KeyError, TypeError):
-
-        live_board = st.session_state.solve_board
-
-    show_remaining(live_board, n)
-
-    if st.button("완료", type="primary"):
-
-        # 반드시 현재 화면의 입력값을 다시 읽습니다.
-        try:
-
-            board = read_dataframe(response["data"], n)
-
-            valid, reason = validate(board, n, box)
-
-            if not valid:
-
-                st.session_state.solve_result = (
-                    "불가능",
-                    reason
-                )
-
-            else:
-
-                count, solution = solve_count(
-                    [row[:] for row in board],
-                    n,
-                    box,
-                    limit=1
-                )
-
-                if count == 0 or solution is None:
-
-                    st.session_state.solve_result = (
-                        "불가능",
-                        "입력한 숫자를 만족하는 해가 없습니다."
-                    )
-
-                else:
-
-                    st.session_state.solve_result = (
-                        "가능",
-                        solution
-                    )
-
-            st.session_state.solve_board = board
-
-            reset_grid(board)
-
-        except (ValueError, KeyError, TypeError) as error:
-
-            st.session_state.solve_result = (
-                "불가능",
-                str(error)
-            )
-
-        st.rerun()
-
-    result = st.session_state.get("solve_result")
-
-    if result:
-
-        if result[0] == "불가능":
-
-            st.error("풀이 불가능")
-
-            st.write("사유:", result[1])
-
-        else:
-
-            st.success("풀이 완료")
-
-            st.dataframe(
-
-                pd.DataFrame([
-                    [
-                        SYMBOLS[v - 1]
-                        for v in row
-                    ]
-                    for row in result[1]
-                ]),
-
-                hide_index=True,
-
-                use_container_width=True,
-
-            )
-
-    if st.button("처음으로"):
-
-        st.session_state.page = "home"
-
-        st.rerun()
-
-
-# ==================================================
-# 문제 난이도 선택
-# ==================================================
-
-elif st.session_state.page == "puzzle_select":
-
-    st.title("스도쿠 문제")
-
-    clues = {
-
-        "하": 26,
-
-        "중": 23,
-
-        "상": 20,
-
-        "최상": 17,
-
-    }
-
-    difficulty = st.radio(
-
-        "난이도",
-
-        ["하", "중", "상", "최상"],
-
-        horizontal=True,
-
-    )
-
-    st.write(
-        f"초기 단서: {clues[difficulty]}개"
-    )
-
-    if st.button("문제 생성", type="primary"):
-
-        puzzle, solution = generate_puzzle(
-            clues[difficulty]
-        )
-
-        st.session_state.puzzle = puzzle
-
-        st.session_state.solution = solution
-
-        st.session_state.difficulty = difficulty
-
-        st.session_state.puzzle_locked = {
-
-            (r, c)
-
-            for r in range(9)
-
-            for c in range(9)
-
-            if puzzle[r][c] != 0
-
-        }
-
-        st.session_state.lives = 3
-
-        st.session_state.game_over = False
-
-        st.session_state.play_board = [
-            row[:]
-            for row in puzzle
-        ]
-
-        reset_grid(puzzle)
-
-        st.session_state.page = "puzzle_play"
-
-        st.rerun()
-
-    if st.button("처음으로"):
-
-        st.session_state.page = "home"
-
-        st.rerun()
-
-
-# ==================================================
-# 문제 풀이 화면
-# ==================================================
-
-elif st.session_state.page == "puzzle_play":
-
-    solution = st.session_state.solution
-
-    locked = st.session_state.puzzle_locked
-
-    st.title(
-        f"스도쿠 — {st.session_state.difficulty}"
-    )
-
-    # 목숨 표시
-    lives = st.session_state.lives
-
-    hearts = "❤️ " * lives
+    color = "#e44b4b" if remaining <= 5 else "#4285d4"
 
     st.markdown(
         f"""
         <div style="
-            text-align:center;
-            font-size:27px;
-            margin:8px 0 15px 0;
+            display:flex;
+            justify-content:space-between;
+            font-weight:700;
+            margin-bottom:4px;
         ">
-            {hearts}
+            <span>남은 시간</span>
+            <span>{remaining:.1f}초</span>
+        </div>
+
+        <div class="timer-outer">
+            <div class="timer-inner"
+                 style="width:{percent}%;background:{color};">
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if st.session_state.game_over:
+    return remaining
 
+
+# =========================================================
+# 초기 상태
+# =========================================================
+
+defaults = {
+    "page": "home",
+    "solve_result": None,
+    "lives": 3,
+    "game_over": False,
+    "phase": "rules",
+    "level_index": 0,
+    "player": 1,
+    "winner": None,
+    "finish_reason": "",
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# =========================================================
+# 홈
+# =========================================================
+
+if st.session_state.page == "home":
+    st.title("스도쿠")
+
+    a, b = st.columns(2)
+
+    with a:
+        if st.button("풀이", type="primary"):
+            st.session_state.page = "solve_select"
+            st.rerun()
+
+    with b:
+        if st.button("문제", type="primary"):
+            st.session_state.page = "puzzle_select"
+            st.rerun()
+
+
+# =========================================================
+# 풀이 규격 선택
+# =========================================================
+
+elif st.session_state.page == "solve_select":
+    st.title("스도쿠 풀이")
+
+    n = st.radio(
+        "규격",
+        [9, 16],
+        format_func=lambda x: f"{x} × {x}",
+        horizontal=True,
+    )
+
+    if st.button("빈 판 만들기", type="primary"):
+        prepare_board(
+            [[0] * n for _ in range(n)],
+            "solve"
+        )
+        st.session_state.solve_n = n
+        st.session_state.solve_result = None
+        st.session_state.page = "solve_board"
+        st.rerun()
+
+    if st.button("처음으로"):
+        st.session_state.page = "home"
+        st.rerun()
+
+
+# =========================================================
+# 풀이 화면
+# =========================================================
+
+elif st.session_state.page == "solve_board":
+    n = st.session_state.solve_n
+
+    st.title(f"{n} × {n} 스도쿠")
+    st.caption(
+        "셀을 선택하고 숫자를 입력하십시오. "
+        "한 글자 입력 즉시 반영됩니다."
+    )
+
+    draw_board(n, "solve")
+    show_remaining(n)
+
+    if st.button("완료", type="primary"):
+        board = [row[:] for row in st.session_state.board]
+        box = 3 if n == 9 else 4
+
+        clue_count = sum(v != 0 for row in board for v in row)
+
+        valid, reason = validate(board, n, box)
+
+        if not valid:
+            st.session_state.solve_result = (
+                "불가능",
+                f"규칙 위반: {reason}"
+            )
+
+        elif clue_count < MIN_CLUES[n]:
+            st.session_state.solve_result = (
+                "불가능",
+                f"단서 부족: 현재 {clue_count}개입니다. "
+                f"최소 {MIN_CLUES[n]}개 이상의 단서가 필요합니다."
+            )
+
+        else:
+            count, solution, complete = solve_count(
+                [row[:] for row in board],
+                n,
+                box,
+                limit=2,
+                max_seconds=6.0,
+            )
+
+            if count == 0 and complete:
+                st.session_state.solve_result = (
+                    "불가능",
+                    "규칙 위반: 입력한 단서로는 해답을 만들 수 없습니다."
+                )
+
+            elif count >= 2:
+                st.session_state.solve_result = (
+                    "불가능",
+                    "단서 부족: 가능한 해답이 여러 개입니다. "
+                    "단서를 더 입력해 주십시오."
+                )
+
+            elif not complete:
+                st.session_state.solve_result = (
+                    "불가능",
+                    "풀이 검증 시간 초과: 단서를 더 입력한 후 다시 시도해 주십시오."
+                )
+
+            elif count == 1:
+                st.session_state.solve_result = (
+                    "가능",
+                    solution
+                )
+
+            else:
+                st.session_state.solve_result = (
+                    "불가능",
+                    "해답을 확인할 수 없습니다."
+                )
+
+        st.rerun()
+
+    result = st.session_state.solve_result
+
+    if result:
+        if result[0] == "불가능":
+            st.error("풀이 불가능")
+            st.warning(result[1])
+
+        else:
+            st.success("유일한 해답을 찾았습니다.")
+
+            st.markdown("### 완성된 스도쿠")
+
+            solution = result[1]
+
+            for row in solution:
+                st.write("　".join(
+                    SYMBOLS[v - 1] for v in row
+                ))
+
+    if st.button("처음으로"):
+        st.session_state.page = "home"
+        st.rerun()
+
+
+# =========================================================
+# 문제 난이도 선택
+# =========================================================
+
+elif st.session_state.page == "puzzle_select":
+    st.title("스도쿠 문제")
+
+    difficulty = st.radio(
+        "난이도 선택",
+        DIFFICULTIES,
+        horizontal=True,
+    )
+
+    st.write(f"초기 단서: {CLUES[difficulty]}개")
+
+    if st.button("문제 생성", type="primary"):
+        puzzle, solution = generate_puzzle(CLUES[difficulty])
+
+        prepare_board(puzzle, "puzzle")
+
+        st.session_state.solution = solution
+
+        st.session_state.locked = {
+            (r, c)
+            for r in range(9)
+            for c in range(9)
+            if puzzle[r][c] != 0
+        }
+
+        st.session_state.lives = 3
+        st.session_state.game_over = False
+        st.session_state.page = "puzzle_play"
+
+        st.rerun()
+
+    st.divider()
+
+    st.markdown("### 1 vs 1 대전")
+
+    st.write(
+        "두 명이 번갈아 가며 한 칸씩 정답을 입력하는 대전 모드입니다."
+    )
+
+    if st.button("1 vs 1 시작", type="primary"):
+        st.session_state.level_index = 0
+        st.session_state.player = 1
+        st.session_state.winner = None
+        st.session_state.finish_reason = ""
+        st.session_state.phase = "rules"
+        st.session_state.page = "versus"
+        st.rerun()
+
+    if st.button("처음으로"):
+        st.session_state.page = "home"
+        st.rerun()
+
+
+# =========================================================
+# 일반 문제 풀이
+# =========================================================
+
+elif st.session_state.page == "puzzle_play":
+    st.title("스도쿠 문제")
+
+    st.markdown(
+        f"<div style='text-align:center;font-size:28px'>"
+        f"{'❤️ ' * st.session_state.lives}</div>",
+        unsafe_allow_html=True,
+    )
+
+    if st.session_state.game_over:
         st.error("실패했습니다. 목숨을 모두 사용했습니다.")
 
     else:
+        draw_board(9, "puzzle")
+        show_remaining(9)
 
-        response = draw_grid(
+        if all(
+            v != 0
+            for row in st.session_state.board
+            for v in row
+        ):
+            if st.session_state.board == st.session_state.solution:
+                st.success("정답입니다!")
 
-            st.session_state.play_board,
+    a, b = st.columns(2)
 
-            9,
-
-            3,
-
-            locked=locked,
-
-            key=f"play_{st.session_state.grid_version}",
-
-        )
-
-        try:
-
-            current = read_dataframe(
-                response["data"],
-                9
-            )
-
-            previous = st.session_state.play_board
-
-            wrong_cells = []
-
-            # 새로 입력하거나 수정한 값만 검사
-            for r in range(9):
-
-                for c in range(9):
-
-                    if (r, c) in locked:
-                        continue
-
-                    old = previous[r][c]
-
-                    new = current[r][c]
-
-                    if (
-                        new != old
-                        and new != 0
-                        and new != solution[r][c]
-                    ):
-
-                        wrong_cells.append((r, c))
-
-            if wrong_cells:
-
-                st.session_state.lives = max(
-                    0,
-                    st.session_state.lives - len(wrong_cells)
-                )
-
-                # 오답은 즉시 빈칸으로 되돌림
-                for r, c in wrong_cells:
-
-                    current[r][c] = 0
-
-                st.session_state.play_board = current
-
-                reset_grid(current)
-
-                if st.session_state.lives == 0:
-
-                    st.session_state.game_over = True
-
-                # 경고 메시지 없이 하트만 갱신
-                st.rerun()
-
-            else:
-
-                st.session_state.play_board = current
-
-        except (ValueError, KeyError, TypeError):
-
-            pass
-
-        show_remaining(
-            st.session_state.play_board,
-            9
-        )
-
-        if not st.session_state.game_over:
-
-            if st.button("정답 확인", type="primary"):
-
-                board = st.session_state.play_board
-
-                if any(
-                    v == 0
-                    for row in board
-                    for v in row
-                ):
-
-                    st.warning("아직 빈칸이 있습니다.")
-
-                elif board == solution:
-
-                    st.success("정답입니다!")
-
-                else:
-
-                    st.error("아직 정답이 아닙니다.")
-
-    left, right = st.columns(2)
-
-    with left:
-
+    with a:
         if st.button("새 문제"):
-
             st.session_state.page = "puzzle_select"
-
             st.rerun()
 
-    with right:
-
+    with b:
         if st.button("처음으로"):
-
             st.session_state.page = "home"
+            st.rerun()
 
+
+# =========================================================
+# 1vs1 룰 설명
+# =========================================================
+
+elif st.session_state.page == "versus":
+    st.title("1 vs 1 스도쿠 대전")
+
+    if st.session_state.phase == "rules":
+        st.markdown("""
+        <div class="rule-card">
+        <h3>대전 규칙</h3>
+
+        1. Player 1부터 시작합니다.<br>
+        2. 각 플레이어에게는 한 턴당 20초가 주어집니다.<br>
+        3. 제한 시간 안에 빈칸 한 개를 정확히 채우면
+        상대 플레이어에게 턴이 넘어갑니다.<br>
+        4. 틀린 숫자를 입력하거나 20초 안에 입력하지 못하면
+        해당 플레이어가 패배합니다.<br>
+        5. 모든 칸을 정확하게 채우면 다음 난이도로 넘어갑니다.<br>
+        6. 난이도는 하 → 중 → 상 → 최상 순서입니다.<br>
+        7. 다음 난이도에서도 마지막으로 성공한 플레이어가
+        먼저 시작합니다.
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.write("첫 번째 판은 하 난이도입니다.")
+
+        if st.button("대전 시작", type="primary"):
+            st.session_state.level_index = 0
+            st.session_state.player = 1
+            st.session_state.phase = "ready"
+            st.session_state.ready_until = time.time() + 3
+            st.rerun()
+
+    elif st.session_state.phase == "ready":
+        st_autorefresh(interval=200, key="versus_ready")
+
+        remaining = max(
+            0,
+            st.session_state.ready_until - time.time()
+        )
+
+        st.markdown(
+            f"<h2>{remaining:.0f}</h2>",
+            unsafe_allow_html=True,
+        )
+
+        st.info("잠시 후 Player 1부터 시작합니다.")
+
+        if remaining <= 0:
+            make_versus_level()
+            st.rerun()
+
+    elif st.session_state.phase == "active":
+        st_autorefresh(interval=200, key="versus_timer")
+
+        remaining = show_timer()
+
+        if remaining <= 0:
+            st.session_state.winner = (
+                2 if st.session_state.player == 1 else 1
+            )
+            st.session_state.phase = "finished"
+            st.session_state.finish_reason = "시간 초과"
+            st.rerun()
+
+        st.markdown(
+            f"<div class='player-label'>"
+            f"Player {st.session_state.player} 차례"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        difficulty = DIFFICULTIES[
+            st.session_state.level_index
+        ]
+
+        st.caption(
+            f"현재 난이도: {difficulty} "
+            f"({st.session_state.level_index + 1}/4)"
+        )
+
+        # 타이머 바는 스도쿠 판 바로 위에 배치됩니다.
+        draw_board(9, "versus")
+        show_remaining(9)
+
+        st.caption(
+            "한 칸을 정확하게 입력하면 상대에게 턴이 넘어갑니다."
+        )
+
+    elif st.session_state.phase == "finished":
+        st.title("대전 종료")
+
+        winner = st.session_state.winner
+
+        st.error(
+            f"Player {winner} 승리!"
+        )
+
+        st.write(
+            f"종료 사유: Player "
+            f"{3 - winner}의 {st.session_state.finish_reason}"
+        )
+
+        if st.button("다시 대전하기", type="primary"):
+            st.session_state.phase = "rules"
+            st.session_state.page = "versus"
+            st.session_state.winner = None
+            st.rerun()
+
+        if st.button("메인 화면"):
+            st.session_state.page = "home"
+            st.rerun()
+
+    elif st.session_state.phase == "champion":
+        st.title("최종 우승")
+
+        st.balloons()
+
+        st.success(
+            f"Player {st.session_state.winner} "
+            "최종 우승!"
+        )
+
+        st.write("하, 중, 상, 최상 모든 난이도를 완료했습니다.")
+
+        if st.button("다시 대전하기", type="primary"):
+            st.session_state.phase = "rules"
+            st.session_state.page = "versus"
+            st.rerun()
+
+        if st.button("메인 화면"):
+            st.session_state.page = "home"
             st.rerun()
