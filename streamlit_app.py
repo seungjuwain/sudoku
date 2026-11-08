@@ -1,9 +1,7 @@
-
 import random
 import time
 import math
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(
     page_title="Classic Sudoku",
@@ -15,6 +13,7 @@ SYMBOLS = "123456789ABCDEFG"
 DIFFICULTIES = ["하", "중", "상", "최상"]
 CLUES = {"하": 26, "중": 23, "상": 20, "최상": 17}
 MIN_CLUES = {9: 17, 16: 40}
+TURN_SECONDS = 20
 
 SEED = [
     [int(x) for x in row]
@@ -26,7 +25,7 @@ SEED = [
 ]
 
 # =========================================================
-# CSS - 원래 Streamlit 셀 배치 방식 유지
+# CSS - 이미지(Classic Sudoku) 형식: 흰 칸 + 얇은 회색선 + 굵은 검은 구역선
 # =========================================================
 
 st.markdown("""
@@ -50,39 +49,43 @@ div.stButton > button {
 }
 
 .st-key-sudoku_board_16 {
-    width: min(100%, 640px) !important;
+    width: min(100%, 680px) !important;
     margin-left: auto !important;
     margin-right: auto !important;
 }
 
-/* 행 사이의 간격 제거 */
+/* 행/열 간격 제거 + 모바일에서도 가로 배치 유지 */
 .st-key-sudoku_board_9 [data-testid="stVerticalBlock"],
 .st-key-sudoku_board_16 [data-testid="stVerticalBlock"] {
     gap: 0 !important;
     row-gap: 0 !important;
 }
 
-/* 행 자체의 여백 제거 */
 .st-key-sudoku_board_9 [data-testid="stHorizontalBlock"],
 .st-key-sudoku_board_16 [data-testid="stHorizontalBlock"] {
     gap: 0 !important;
     column-gap: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
+    flex-wrap: nowrap !important;
     align-items: stretch !important;
 }
 
-/* 열의 상하좌우 여백 제거 */
 .st-key-sudoku_board_9 [data-testid="column"],
-.st-key-sudoku_board_16 [data-testid="column"] {
+.st-key-sudoku_board_16 [data-testid="column"],
+.st-key-sudoku_board_9 [data-testid="stColumn"],
+.st-key-sudoku_board_16 [data-testid="stColumn"] {
+    flex: 1 1 0 !important;
+    width: auto !important;
     min-width: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
 }
 
-/* 셀 입력창 외부 여백 제거 */
 .st-key-sudoku_board_9 [data-testid="stTextInput"],
-.st-key-sudoku_board_16 [data-testid="stTextInput"] {
+.st-key-sudoku_board_16 [data-testid="stTextInput"],
+.st-key-sudoku_board_9 [data-testid="stWidget"],
+.st-key-sudoku_board_16 [data-testid="stWidget"] {
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
@@ -95,43 +98,54 @@ div.stButton > button {
     padding: 0 !important;
 }
 
-/* 9x9 셀 */
-.st-key-sudoku_board_9 input {
-    width: 100% !important;
-    height: clamp(34px, 6.67vw, 60px) !important;
-    min-height: clamp(34px, 6.67vw, 60px) !important;
+/* 셀(입력창 바깥 테두리 박스): 선은 아래 draw_board 에서 칸마다 지정 */
+.st-key-sudoku_board_9 [data-baseweb="input"],
+.st-key-sudoku_board_16 [data-baseweb="input"] {
+    background: #ffffff !important;
     border-radius: 0 !important;
-    font-size: clamp(15px, 2.5vw, 23px) !important;
-    text-align: center !important;
-    padding: 0 !important;
-    margin: 0 !important;
     box-sizing: border-box !important;
+    box-shadow: none !important;
+    outline: none !important;
+    width: 100% !important;
 }
 
-/* 16x16 셀 */
-.st-key-sudoku_board_16 input {
-    width: 100% !important;
-    height: clamp(22px, 6.25vw, 40px) !important;
-    min-height: clamp(22px, 6.25vw, 40px) !important;
-    border-radius: 0 !important;
-    font-size: clamp(11px, 1.8vw, 16px) !important;
-    text-align: center !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-sizing: border-box !important;
+.st-key-sudoku_board_9 [data-baseweb="input"]:focus-within,
+.st-key-sudoku_board_16 [data-baseweb="input"]:focus-within {
+    background: #fff6c8 !important;
 }
 
+.st-key-sudoku_board_9 [data-baseweb="base-input"],
+.st-key-sudoku_board_16 [data-baseweb="base-input"] {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+/* 입력 글자 */
 .st-key-sudoku_board_9 input,
 .st-key-sudoku_board_16 input {
+    width: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    text-align: center !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
     box-shadow: none !important;
     outline: none !important;
 }
 
-/* 입력 위젯 하단 기본 여백 제거 */
-.st-key-sudoku_board_9 [data-testid="stWidget"],
-.st-key-sudoku_board_16 [data-testid="stWidget"] {
-    margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
+.st-key-sudoku_board_9 input {
+    height: clamp(34px, 6.67vw, 60px) !important;
+    min-height: clamp(34px, 6.67vw, 60px) !important;
+    font-size: clamp(15px, 2.5vw, 23px) !important;
+}
+
+.st-key-sudoku_board_16 input {
+    height: clamp(22px, 6.25vw, 42px) !important;
+    min-height: clamp(22px, 6.25vw, 42px) !important;
+    font-size: clamp(11px, 1.8vw, 17px) !important;
 }
 
 /* 타이머 */
@@ -147,7 +161,6 @@ div.stButton > button {
 .timer-inner {
     height: 100%;
     border-radius: 10px;
-    transition: width 0.12s linear;
 }
 
 .player-label {
@@ -316,13 +329,21 @@ def validate(board, n, box):
 # 문제 생성
 # =========================================================
 
-def generate_puzzle(target_clues):
-    count, seed_solution, complete = solve_count(
-        [row[:] for row in SEED], 9, 3, limit=2
+@st.cache_resource
+def get_seed_solution():
+    """기본 퍼즐의 유일해 검증은 앱 실행 후 딱 한 번만 수행한다."""
+    count, solution, complete = solve_count(
+        [row[:] for row in SEED], 9, 3, limit=2, max_seconds=30.0
     )
 
     if count != 1 or not complete:
         raise RuntimeError("기본 퍼즐의 유일해 검증에 실패했습니다.")
+
+    return solution
+
+
+def generate_puzzle(target_clues):
+    seed_solution = get_seed_solution()
 
     def shuffled_groups():
         groups = [
@@ -403,6 +424,43 @@ def prepare_board(board, mode):
 
 
 # =========================================================
+# 1vs1 퍼즐 생성
+# =========================================================
+
+def make_versus_level():
+    difficulty = DIFFICULTIES[st.session_state.level_index]
+    puzzle, solution = generate_puzzle(CLUES[difficulty])
+
+    prepare_board(puzzle, "versus")
+    st.session_state.solution = solution
+
+    st.session_state.locked = {
+        (r, c)
+        for r in range(9)
+        for c in range(9)
+        if puzzle[r][c] != 0
+    }
+
+    st.session_state.locked_values = {
+        (r, c): puzzle[r][c]
+        for r in range(9)
+        for c in range(9)
+        if puzzle[r][c] != 0
+    }
+
+    now = time.time()
+    st.session_state.turn_start = now
+    st.session_state.deadline = now + TURN_SECONDS
+    st.session_state.phase = "active"
+
+
+def finish_versus(loser, reason):
+    st.session_state.winner = 3 - loser
+    st.session_state.phase = "finished"
+    st.session_state.finish_reason = reason
+
+
+# =========================================================
 # 입력 콜백
 # =========================================================
 
@@ -422,6 +480,11 @@ def cell_changed(r, c, mode):
     if raw == "":
         if mode == "solve":
             st.session_state.board[r][c] = 0
+        elif st.session_state.board[r][c] != 0:
+            # 이미 채워진 칸은 지울 수 없다
+            st.session_state[key] = SYMBOLS[
+                st.session_state.board[r][c] - 1
+            ]
         return
 
     allowed = SYMBOLS[:n]
@@ -465,11 +528,10 @@ def cell_changed(r, c, mode):
             st.session_state[key] = ""
             return
 
+        # 20초를 넘겨서 입력하면 시간 초과 패배
         if time.time() >= st.session_state.deadline:
-            st.session_state.winner = 3 - st.session_state.player
-            st.session_state.phase = "finished"
-            st.session_state.finish_reason = "시간 초과"
             st.session_state[key] = ""
+            finish_versus(st.session_state.player, "시간 초과")
             return
 
         if st.session_state.board[r][c] != 0:
@@ -478,15 +540,15 @@ def cell_changed(r, c, mode):
             ]
             return
 
+        # 오답이면 즉시 패배
         if value != st.session_state.solution[r][c]:
-            st.session_state.winner = 3 - st.session_state.player
-            st.session_state.phase = "finished"
-            st.session_state.finish_reason = "오답"
             st.session_state[key] = ""
+            finish_versus(st.session_state.player, "오답")
             return
 
         st.session_state.board[r][c] = value
 
+        # 판 완성 -> 다음 난이도 (마지막으로 맞힌 플레이어가 그대로 먼저 시작)
         if all(v != 0 for row in st.session_state.board for v in row):
             next_level = st.session_state.level_index + 1
 
@@ -499,115 +561,62 @@ def cell_changed(r, c, mode):
             make_versus_level()
             return
 
+        # 정답 -> 상대 턴, 20초 다시 시작
         st.session_state.player = 3 - st.session_state.player
-        st.session_state.turn_start = time.time()
-        st.session_state.deadline = time.time() + 20
+        now = time.time()
+        st.session_state.turn_start = now
+        st.session_state.deadline = now + TURN_SECONDS
 
 
 # =========================================================
-# 1vs1 퍼즐 생성
+# 스도쿠 판 출력 (이미지 형식)
+#  - 칸은 모두 흰색, 얇은 회색선
+#  - 구역(9x9 는 3칸, 16x16 은 4칸)마다 굵은 검은 실선
+#  - 칸마다 왼쪽/위쪽 선만 그려서 선이 겹쳐 두꺼워지지 않게 함
 # =========================================================
 
-def make_versus_level():
-    difficulty = DIFFICULTIES[st.session_state.level_index]
-    puzzle, solution = generate_puzzle(CLUES[difficulty])
+THIN = "1px solid #8c8c8c"
+THICK = "3px solid #111111"
 
-    prepare_board(puzzle, "versus")
-    st.session_state.solution = solution
-
-    st.session_state.locked = {
-        (r, c)
-        for r in range(9)
-        for c in range(9)
-        if puzzle[r][c] != 0
-    }
-
-    st.session_state.locked_values = {
-        (r, c): puzzle[r][c]
-        for r in range(9)
-        for c in range(9)
-        if puzzle[r][c] != 0
-    }
-
-    now = time.time()
-    st.session_state.turn_start = now
-    st.session_state.deadline = now + 20
-    st.session_state.phase = "active"
-
-
-# =========================================================
-# 스도쿠 판 출력
-# 원래 코드의 st.container + st.columns + st.text_input 방식
-# =========================================================
 
 def draw_board(n, mode):
     box = 3 if n == 9 else 4
-    selected = st.session_state.get("selected")
     locked = st.session_state.get("locked", set())
+    board = st.session_state.board
 
-    css = "<style>"
+    rules = []
 
     for r in range(n):
         for c in range(n):
-            key = f"cell_{r}_{c}"
-
-            is_selected = selected == (r, c)
             is_given = (r, c) in locked
+            has_value = board[r][c] != 0
 
-            in_same_area = (
-                selected is not None
-                and (
-                    selected[0] == r
-                    or selected[1] == c
-                    or (
-                        selected[0] // box == r // box
-                        and selected[1] // box == c // box
-                    )
-                )
-            )
-
-            if is_selected:
-                background = "#e8dcff"
-            elif in_same_area:
-                background = "#dceeff"
-            elif is_given:
-                background = "#e9eef5"
+            if is_given:
+                color, weight = "#111111", "800"
+            elif has_value:
+                color, weight = "#1a56c4", "600"
             else:
-                background = "#ffffff"
+                color, weight = "#111111", "500"
 
-            color = "#254f91" if is_given else "#222222"
+            left = THICK if c % box == 0 else THIN
+            top = THICK if r % box == 0 else THIN
+            right = THICK if c == n - 1 else "none"
+            bottom = THICK if r == n - 1 else "none"
 
-            left = (
-                "3px solid #222222"
-                if c % box == 0 else "1px solid #aaaaaa"
-            )
-            top = (
-                "3px solid #222222"
-                if r % box == 0 else "1px solid #aaaaaa"
-            )
-            right = (
-                "3px solid #222222"
-                if (c + 1) % box == 0 else "1px solid #aaaaaa"
-            )
-            bottom = (
-                "3px solid #222222"
-                if (r + 1) % box == 0 else "1px solid #aaaaaa"
+            sel = f"div.st-key-cell_{r}_{c}"
+            rules.append(
+                f"{sel} [data-baseweb='input'] {{"
+                f"border-left:{left} !important;"
+                f"border-top:{top} !important;"
+                f"border-right:{right} !important;"
+                f"border-bottom:{bottom} !important;}}"
+                f"{sel} input {{"
+                f"color:{color} !important;"
+                f"-webkit-text-fill-color:{color} !important;"
+                f"font-weight:{weight} !important;}}"
             )
 
-            css += f"""
-            div.st-key-{key} input {{
-                background: {background} !important;
-                color: {color} !important;
-                border-left: {left} !important;
-                border-top: {top} !important;
-                border-right: {right} !important;
-                border-bottom: {bottom} !important;
-                border-radius: 0 !important;
-                font-weight: {'700' if is_given else '500'} !important;
-            }}
-            """
-
-    css += "</style>"
+    css = "<style>" + "".join(rules) + "</style>"
 
     with st.container(key=f"sudoku_board_{n}"):
         st.markdown(css, unsafe_allow_html=True)
@@ -624,7 +633,6 @@ def draw_board(n, mode):
                         key=key,
                         max_chars=1,
                         label_visibility="collapsed",
-                        disabled=False,
                         on_change=cell_changed,
                         args=(r, c, mode)
                     )
@@ -664,12 +672,25 @@ def show_remaining(n):
 
 
 # =========================================================
-# 20초 타이머
+# 20초 타이머 / 카운트다운
+#  st_autorefresh 로 페이지 전체를 0.1초마다 다시 그리면
+#  판(입력창 81개)이 그려지기도 전에 계속 새로고침되어 판이 안 뜬다.
+#  -> 이 부분만 따로 갱신되는 st.fragment 를 사용한다.
 # =========================================================
 
-def show_timer():
-    remaining = max(0, st.session_state.deadline - time.time())
-    percent = remaining / 20 * 100
+@st.fragment(run_every=0.2)
+def timer_fragment():
+    if st.session_state.phase != "active":
+        return
+
+    remaining = st.session_state.deadline - time.time()
+
+    if remaining <= 0:
+        finish_versus(st.session_state.player, "시간 초과")
+        st.rerun()  # 앱 전체를 다시 실행해 결과 화면으로 이동
+        return
+
+    percent = remaining / TURN_SECONDS * 100
     color = "#e44b4b" if remaining <= 5 else "#4285d4"
 
     st.markdown(
@@ -692,7 +713,36 @@ def show_timer():
         """,
         unsafe_allow_html=True
     )
-    return remaining
+
+
+@st.fragment(run_every=0.2)
+def ready_fragment():
+    if st.session_state.phase != "ready":
+        return
+
+    remaining = st.session_state.ready_until - time.time()
+
+    if remaining <= 0:
+        make_versus_level()
+        st.rerun()
+        return
+
+    countdown = max(1, math.ceil(remaining))
+
+    st.markdown(
+        f"""
+        <div style="text-align:center;padding:35px 0;">
+            <h2>1 vs 1 스도쿠 대전</h2>
+            <div style="font-size:72px;font-weight:800;margin:25px 0;">
+                {countdown}
+            </div>
+            <p style="font-size:18px;">
+                잠시 후 Player {st.session_state.player}부터 시작합니다.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # =========================================================
@@ -887,7 +937,10 @@ elif st.session_state.page == "puzzle_select":
 
     st.divider()
     st.markdown("### 1 vs 1 대전")
-    st.write("두 플레이어가 번갈아 한 칸씩 정답을 입력합니다.")
+    st.write(
+        f"두 플레이어가 번갈아 한 칸씩 정답을 입력합니다. "
+        f"한 턴은 {TURN_SECONDS}초입니다."
+    )
 
     if st.button("1 vs 1 시작", type="primary"):
         st.session_state.level_index = 0
@@ -950,14 +1003,14 @@ elif st.session_state.page == "versus":
     st.title("1 vs 1 스도쿠 대전")
 
     if st.session_state.phase == "rules":
-        st.markdown("""
+        st.markdown(f"""
         <div class="rule-card">
         <h3>대전 규칙</h3>
         1. Player 1부터 시작합니다.<br>
-        2. 각 플레이어에게 한 턴당 20초가 주어집니다.<br>
+        2. 각 플레이어에게 한 턴당 {TURN_SECONDS}초가 주어집니다.<br>
         3. 제한 시간 안에 빈칸 한 개를 정확하게 채우면
         상대 플레이어에게 턴이 넘어갑니다.<br>
-        4. 틀린 숫자를 입력하거나 20초 안에 입력하지 못하면
+        4. 틀린 숫자를 입력하거나 {TURN_SECONDS}초 안에 입력하지 못하면
         해당 플레이어가 패배합니다.<br>
         5. 모든 칸을 정확하게 채우면 다음 난이도로 올라갑니다.<br>
         6. 난이도는 하 → 중 → 상 → 최상 순서입니다.<br>
@@ -976,43 +1029,10 @@ elif st.session_state.page == "versus":
             st.rerun()
 
     elif st.session_state.phase == "ready":
-        st_autorefresh(interval=100, key="versus_ready_countdown")
-
-        remaining = st.session_state.ready_until - time.time()
-
-        if remaining <= 0:
-            make_versus_level()
-            st.rerun()
-        else:
-            countdown = max(1, math.ceil(remaining))
-
-            st.markdown(
-                f"""
-                <div style="text-align:center;padding:35px 0;">
-                    <h2>1 vs 1 스도쿠 대전</h2>
-                    <div style="font-size:72px;font-weight:800;margin:25px 0;">
-                        {countdown}
-                    </div>
-                    <p style="font-size:18px;">
-                        잠시 후 Player 1부터 시작합니다.
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        ready_fragment()
 
     elif st.session_state.phase == "active":
-        st_autorefresh(interval=100, key="versus_active_timer")
-
-        remaining = st.session_state.deadline - time.time()
-
-        if remaining <= 0:
-            st.session_state.winner = 3 - st.session_state.player
-            st.session_state.phase = "finished"
-            st.session_state.finish_reason = "시간 초과"
-            st.rerun()
-
-        show_timer()
+        timer_fragment()
 
         st.markdown(
             f"""
