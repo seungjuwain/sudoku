@@ -1,7 +1,10 @@
 import random
 import time
 import math
+import os
+import tempfile
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Classic Sudoku",
@@ -39,113 +42,6 @@ div.stButton > button {
     width: 100%;
     min-height: 42px;
     font-size: 16px;
-}
-
-/* 스도쿠 판 크기 */
-.st-key-sudoku_board_9 {
-    width: min(100%, 540px) !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-}
-
-.st-key-sudoku_board_16 {
-    width: min(100%, 680px) !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-}
-
-/* 행/열 간격 제거 + 모바일에서도 가로 배치 유지 */
-.st-key-sudoku_board_9 [data-testid="stVerticalBlock"],
-.st-key-sudoku_board_16 [data-testid="stVerticalBlock"] {
-    gap: 0 !important;
-    row-gap: 0 !important;
-}
-
-.st-key-sudoku_board_9 [data-testid="stHorizontalBlock"],
-.st-key-sudoku_board_16 [data-testid="stHorizontalBlock"] {
-    gap: 0 !important;
-    column-gap: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    flex-wrap: nowrap !important;
-    align-items: stretch !important;
-}
-
-.st-key-sudoku_board_9 [data-testid="column"],
-.st-key-sudoku_board_16 [data-testid="column"],
-.st-key-sudoku_board_9 [data-testid="stColumn"],
-.st-key-sudoku_board_16 [data-testid="stColumn"] {
-    flex: 1 1 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-.st-key-sudoku_board_9 [data-testid="stTextInput"],
-.st-key-sudoku_board_16 [data-testid="stTextInput"],
-.st-key-sudoku_board_9 [data-testid="stWidget"],
-.st-key-sudoku_board_16 [data-testid="stWidget"] {
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-}
-
-.st-key-sudoku_board_9 [data-testid="stTextInput"] > div,
-.st-key-sudoku_board_16 [data-testid="stTextInput"] > div {
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 셀(입력창 바깥 테두리 박스): 선은 아래 draw_board 에서 칸마다 지정 */
-.st-key-sudoku_board_9 [data-baseweb="input"],
-.st-key-sudoku_board_16 [data-baseweb="input"] {
-    background: #ffffff !important;
-    border-radius: 0 !important;
-    box-sizing: border-box !important;
-    box-shadow: none !important;
-    outline: none !important;
-    width: 100% !important;
-}
-
-.st-key-sudoku_board_9 [data-baseweb="input"]:focus-within,
-.st-key-sudoku_board_16 [data-baseweb="input"]:focus-within {
-    background: #fff6c8 !important;
-}
-
-.st-key-sudoku_board_9 [data-baseweb="base-input"],
-.st-key-sudoku_board_16 [data-baseweb="base-input"] {
-    background: transparent !important;
-    border: none !important;
-    border-radius: 0 !important;
-}
-
-/* 입력 글자 */
-.st-key-sudoku_board_9 input,
-.st-key-sudoku_board_16 input {
-    width: 100% !important;
-    background: transparent !important;
-    border: none !important;
-    border-radius: 0 !important;
-    text-align: center !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-sizing: border-box !important;
-    box-shadow: none !important;
-    outline: none !important;
-}
-
-.st-key-sudoku_board_9 input {
-    height: clamp(34px, 6.67vw, 60px) !important;
-    min-height: clamp(34px, 6.67vw, 60px) !important;
-    font-size: clamp(15px, 2.5vw, 23px) !important;
-}
-
-.st-key-sudoku_board_16 input {
-    height: clamp(22px, 6.25vw, 42px) !important;
-    min-height: clamp(22px, 6.25vw, 42px) !important;
-    font-size: clamp(11px, 1.8vw, 17px) !important;
 }
 
 /* 타이머 */
@@ -399,28 +295,10 @@ def generate_puzzle(target_clues):
 # 입력 상태 초기화
 # =========================================================
 
-def clear_cell_keys():
-    for r in range(16):
-        for c in range(16):
-            key = f"cell_{r}_{c}"
-            if key in st.session_state:
-                del st.session_state[key]
-
-
 def prepare_board(board, mode):
-    clear_cell_keys()
-
-    n = len(board)
     st.session_state.board = [row[:] for row in board]
     st.session_state.selected = None
     st.session_state.board_mode = mode
-
-    for r in range(n):
-        for c in range(n):
-            value = board[r][c]
-            st.session_state[f"cell_{r}_{c}"] = (
-                SYMBOLS[value - 1] if value else ""
-            )
 
 
 # =========================================================
@@ -464,58 +342,30 @@ def finish_versus(loser, reason):
 # 입력 콜백
 # =========================================================
 
-def cell_changed(r, c, mode):
-    key = f"cell_{r}_{c}"
-    raw = str(st.session_state.get(key, "")).strip().upper()
-
-    n = len(st.session_state.board)
-    st.session_state.selected = (r, c)
-
+def handle_cell_input(r, c, value, mode):
+    """판(컴포넌트)에서 들어온 입력 처리. value 0 은 지우기."""
+    # 처음 주어진 단서는 선택만 가능하고 수정은 불가능
     if (r, c) in st.session_state.get("locked", set()):
-        original = st.session_state.locked_values[(r, c)]
-        st.session_state.board[r][c] = original
-        st.session_state[key] = SYMBOLS[original - 1]
         return
-
-    if raw == "":
-        if mode == "solve":
-            st.session_state.board[r][c] = 0
-        elif st.session_state.board[r][c] != 0:
-            # 이미 채워진 칸은 지울 수 없다
-            st.session_state[key] = SYMBOLS[
-                st.session_state.board[r][c] - 1
-            ]
-        return
-
-    allowed = SYMBOLS[:n]
-
-    if len(raw) != 1 or raw not in allowed:
-        st.session_state[key] = ""
-        return
-
-    value = SYMBOLS.index(raw) + 1
 
     if mode == "solve":
         st.session_state.board[r][c] = value
         st.session_state.solve_result = None
         return
 
+    if value == 0:
+        return
+
     if mode == "puzzle":
         if st.session_state.game_over:
-            st.session_state[key] = ""
             return
 
         if st.session_state.board[r][c] != 0:
-            st.session_state[key] = SYMBOLS[
-                st.session_state.board[r][c] - 1
-            ]
             return
 
         if value == st.session_state.solution[r][c]:
             st.session_state.board[r][c] = value
         else:
-            st.session_state.board[r][c] = 0
-            st.session_state[key] = ""
             st.session_state.lives -= 1
 
             if st.session_state.lives <= 0:
@@ -525,24 +375,18 @@ def cell_changed(r, c, mode):
 
     if mode == "versus":
         if st.session_state.phase != "active":
-            st.session_state[key] = ""
             return
 
         # 20초를 넘겨서 입력하면 시간 초과 패배
         if time.time() >= st.session_state.deadline:
-            st.session_state[key] = ""
             finish_versus(st.session_state.player, "시간 초과")
             return
 
         if st.session_state.board[r][c] != 0:
-            st.session_state[key] = SYMBOLS[
-                st.session_state.board[r][c] - 1
-            ]
             return
 
         # 오답이면 즉시 패배
         if value != st.session_state.solution[r][c]:
-            st.session_state[key] = ""
             finish_versus(st.session_state.player, "오답")
             return
 
@@ -575,67 +419,328 @@ def cell_changed(r, c, mode):
 #  - 칸마다 왼쪽/위쪽 선만 그려서 선이 겹쳐 두꺼워지지 않게 함
 # =========================================================
 
-THIN = "1px solid #8c8c8c"
-THICK = "3px solid #111111"
+BOARD_HTML = r"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-family: "Segoe UI", "Noto Sans KR", "Malgun Gothic", Arial, sans-serif;
+  }
+  #wrap {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 0 6px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  /* 판: 흰 칸 + 얇은 회색선 + 굵은 검은 구역선 (Classic Sudoku 양식) */
+  #grid {
+    display: grid;
+    background: #ffffff;
+    outline: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  .cell {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    color: #111111;
+    cursor: pointer;
+    line-height: 1;
+    overflow: hidden;
+  }
+  .cell.given { font-weight: 800; color: #111111; }
+  .cell.user  { font-weight: 600; color: #1a56c4; }
+  .cell.sel   { background: #ffe98a; }
+
+  #pad {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+    max-width: 680px;
+  }
+  #pad button {
+    min-width: 36px;
+    height: 40px;
+    padding: 0 8px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #111111;
+    background: #ffffff;
+    border: 1px solid #8c8c8c;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #pad button:active { background: #ffe98a; }
+  #pad.off button { opacity: 0.45; cursor: default; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="grid" tabindex="0"></div>
+  <div id="pad"></div>
+</div>
+
+<script>
+(function () {
+  var SYMBOLS = "123456789ABCDEFG";
+  var args = null;
+  var selected = null;
+  var counter = 0;
+  var lastHeight = 0;
+  var padKey = "";
+
+  var wrap = document.getElementById("wrap");
+  var grid = document.getElementById("grid");
+  var pad = document.getElementById("pad");
+
+  function send(type, data) {
+    var msg = { isStreamlitMessage: true, type: type };
+    for (var k in data) { msg[k] = data[k]; }
+    window.parent.postMessage(msg, "*");
+  }
+
+  function setHeight() {
+    var h = wrap.offsetHeight + 8;
+    if (h !== lastHeight) {
+      lastHeight = h;
+      send("streamlit:setFrameHeight", { height: h });
+    }
+  }
+
+  function sendInput(v) {
+    if (!args || !selected || !args.enabled) return;
+    if (v === 0 && !args.allow_erase) return;
+
+    var r = selected[0], c = selected[1];
+    if (args.given[r][c]) return;              // 처음 단서는 선택만 가능, 수정 불가
+    if (args.board[r][c] === v) return;
+
+    counter += 1;
+    send("streamlit:setComponentValue", {
+      value: { id: Date.now() + "-" + counter, r: r, c: c, v: v },
+      dataType: "json"
+    });
+  }
+
+  function renderGrid() {
+    var n = args.n;
+    var box = (n === 9) ? 3 : 4;
+    var maxW = (n === 9) ? 540 : 680;
+    var avail = wrap.clientWidth - 8;
+    var size = Math.max(180, Math.min(avail, maxW));
+    var cellSize = size / n;
+
+    if (selected && (selected[0] >= n || selected[1] >= n)) selected = null;
+
+    grid.style.width = size + "px";
+    grid.style.height = size + "px";
+    grid.style.gridTemplateColumns = "repeat(" + n + ", 1fr)";
+    grid.style.gridTemplateRows = "repeat(" + n + ", 1fr)";
+    grid.style.fontSize = Math.round(cellSize * 0.58) + "px";
+
+    var THIN = "1px solid #9a9a9a";
+    var THICK = "3px solid #111111";
+
+    var html = [];
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        var v = args.board[r][c];
+        var cls = "cell";
+        if (args.given[r][c]) cls += " given";
+        else if (v) cls += " user";
+        if (selected && selected[0] === r && selected[1] === c) cls += " sel";
+
+        var left = (c % box === 0) ? THICK : THIN;
+        var top = (r % box === 0) ? THICK : THIN;
+        var right = (c === n - 1) ? THICK : "none";
+        var bottom = (r === n - 1) ? THICK : "none";
+
+        html.push(
+          '<div class="' + cls + '" data-r="' + r + '" data-c="' + c + '" ' +
+          'style="border-left:' + left + ";border-top:" + top +
+          ";border-right:" + right + ";border-bottom:" + bottom + '">' +
+          (v ? SYMBOLS.charAt(v - 1) : "") + "</div>"
+        );
+      }
+    }
+    grid.innerHTML = html.join("");
+  }
+
+  function buildPad() {
+    var key = args.n + ":" + (args.allow_erase ? "e" : "-");
+    if (key !== padKey) {
+      padKey = key;
+      var html = [];
+      for (var v = 1; v <= args.n; v++) {
+        html.push('<button type="button" data-v="' + v + '">' + SYMBOLS.charAt(v - 1) + "</button>");
+      }
+      if (args.allow_erase) {
+        html.push('<button type="button" data-v="0">⌫</button>');
+      }
+      pad.innerHTML = html.join("");
+    }
+    pad.className = args.enabled ? "" : "off";
+  }
+
+  function fullRender() {
+    renderGrid();
+    buildPad();
+    window.requestAnimationFrame(setHeight);
+  }
+
+  // 셀 선택 (단서 칸도 선택 가능)
+  grid.addEventListener("click", function (e) {
+    var t = e.target;
+    while (t && t !== grid && !(t.classList && t.classList.contains("cell"))) t = t.parentNode;
+    if (!t || t === grid) return;
+    selected = [parseInt(t.getAttribute("data-r"), 10), parseInt(t.getAttribute("data-c"), 10)];
+    renderGrid();
+    grid.focus();
+  });
+
+  // 숫자 패드 (모바일용)
+  pad.addEventListener("mousedown", function (e) { e.preventDefault(); });
+  pad.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== "BUTTON") return;
+    sendInput(parseInt(t.getAttribute("data-v"), 10));
+  });
+
+  // 키보드
+  document.addEventListener("keydown", function (e) {
+    if (!args) return;
+    var n = args.n;
+    var k = e.key;
+
+    var dr = 0, dc = 0, isArrow = true;
+    if (k === "ArrowUp") dr = -1;
+    else if (k === "ArrowDown") dr = 1;
+    else if (k === "ArrowLeft") dc = -1;
+    else if (k === "ArrowRight") dc = 1;
+    else isArrow = false;
+
+    if (isArrow) {
+      e.preventDefault();
+      if (!selected) selected = [0, 0];
+      else selected = [
+        Math.min(n - 1, Math.max(0, selected[0] + dr)),
+        Math.min(n - 1, Math.max(0, selected[1] + dc))
+      ];
+      renderGrid();
+      return;
+    }
+
+    if (k === "Backspace" || k === "Delete" || k === "0") {
+      e.preventDefault();
+      sendInput(0);
+      return;
+    }
+
+    if (k && k.length === 1) {
+      var idx = SYMBOLS.indexOf(k.toUpperCase());
+      if (idx >= 0 && idx < n) {
+        e.preventDefault();
+        sendInput(idx + 1);
+      }
+    }
+  });
+
+  window.addEventListener("message", function (e) {
+    if (!e.data || e.data.type !== "streamlit:render") return;
+    args = e.data.args;
+    fullRender();
+  });
+
+  window.addEventListener("resize", function () {
+    if (args) fullRender();
+  });
+
+  send("streamlit:componentReady", { apiVersion: 1 });
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def _prepare_component_dir():
+    """판 화면(HTML)을 app.py 안에 내장하고, 실행 시 임시 폴더에 파일로 만든다."""
+    folder = os.path.join(tempfile.gettempdir(), "classic_sudoku_board")
+    os.makedirs(folder, exist_ok=True)
+
+    path = os.path.join(folder, "index.html")
+    try:
+        with open(path, encoding="utf-8") as f:
+            same = f.read() == BOARD_HTML
+    except OSError:
+        same = False
+
+    if not same:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(BOARD_HTML)
+
+    return folder
+
+
+_sudoku_component = components.declare_component(
+    "sudoku_board", path=_prepare_component_dir()
+)
 
 
 def draw_board(n, mode):
-    box = 3 if n == 9 else 4
-    locked = st.session_state.get("locked", set())
     board = st.session_state.board
+    locked = st.session_state.get("locked", set())
 
-    rules = []
+    given = [
+        [1 if (r, c) in locked else 0 for c in range(n)]
+        for r in range(n)
+    ]
 
-    for r in range(n):
-        for c in range(n):
-            is_given = (r, c) in locked
-            has_value = board[r][c] != 0
+    if mode == "puzzle":
+        enabled = not st.session_state.game_over
+    elif mode == "versus":
+        enabled = st.session_state.phase == "active"
+    else:
+        enabled = True
 
-            if is_given:
-                color, weight = "#111111", "800"
-            elif has_value:
-                color, weight = "#1a56c4", "600"
-            else:
-                color, weight = "#111111", "500"
+    event = _sudoku_component(
+        n=n,
+        board=board,
+        given=given,
+        enabled=enabled,
+        allow_erase=(mode == "solve"),
+        key=f"sudoku_{mode}_{n}",
+        default=None,
+    )
 
-            left = THICK if c % box == 0 else THIN
-            top = THICK if r % box == 0 else THIN
-            right = THICK if c == n - 1 else "none"
-            bottom = THICK if r == n - 1 else "none"
+    if isinstance(event, dict) and event.get("id") != st.session_state.get(
+        "last_board_event"
+    ):
+        st.session_state.last_board_event = event.get("id")
 
-            sel = f"div.st-key-cell_{r}_{c}"
-            rules.append(
-                f"{sel} [data-baseweb='input'] {{"
-                f"border-left:{left} !important;"
-                f"border-top:{top} !important;"
-                f"border-right:{right} !important;"
-                f"border-bottom:{bottom} !important;}}"
-                f"{sel} input {{"
-                f"color:{color} !important;"
-                f"-webkit-text-fill-color:{color} !important;"
-                f"font-weight:{weight} !important;}}"
-            )
+        try:
+            r = int(event["r"])
+            c = int(event["c"])
+            v = int(event["v"])
+        except (KeyError, TypeError, ValueError):
+            return
 
-    css = "<style>" + "".join(rules) + "</style>"
-
-    with st.container(key=f"sudoku_board_{n}"):
-        st.markdown(css, unsafe_allow_html=True)
-
-        for r in range(n):
-            cols = st.columns(n, gap=None)
-
-            for c in range(n):
-                key = f"cell_{r}_{c}"
-
-                with cols[c]:
-                    st.text_input(
-                        f"{r+1}-{c+1}",
-                        key=key,
-                        max_chars=1,
-                        label_visibility="collapsed",
-                        on_change=cell_changed,
-                        args=(r, c, mode)
-                    )
+        if 0 <= r < n and 0 <= c < n and 0 <= v <= n and enabled:
+            handle_cell_input(r, c, v, mode)
+            st.rerun()
 
 
 # =========================================================
