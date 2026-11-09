@@ -461,7 +461,9 @@ BOARD_HTML = r"""<!DOCTYPE html>
   }
   .cell.given { font-weight: 800; color: #111111; }
   .cell.user  { font-weight: 600; color: #1a56c4; }
-  .cell.sel   { background: #ffe98a; }
+  .cell.line  { background: #cfe8ff; }  /* 선택 셀의 행/열: 하늘색 */
+  .cell.sel   { background: #ffe98a; }  /* 빈 칸을 선택했을 때 */
+  .cell.same  { background: #dccdf7; }  /* 같은 숫자 셀(선택 셀 포함): 연보라 */
 
   #pad {
     display: flex;
@@ -551,6 +553,7 @@ BOARD_HTML = r"""<!DOCTYPE html>
     grid.style.gridTemplateRows = "repeat(" + n + ", 1fr)";
     grid.style.fontSize = Math.round(cellSize * 0.58) + "px";
 
+    var sv = selected ? args.board[selected[0]][selected[1]] : 0;
     var THIN = "1px solid #9a9a9a";
     var THICK = "3px solid #111111";
 
@@ -561,7 +564,11 @@ BOARD_HTML = r"""<!DOCTYPE html>
         var cls = "cell";
         if (args.given[r][c]) cls += " given";
         else if (v) cls += " user";
-        if (selected && selected[0] === r && selected[1] === c) cls += " sel";
+        if (selected) {
+          if (sv && v === sv) cls += " same";
+          else if (r === selected[0] || c === selected[1]) cls += " line";
+          if (!sv && selected[0] === r && selected[1] === c) cls += " sel";
+        }
 
         var left = (c % box === 0) ? THICK : THIN;
         var top = (r % box === 0) ? THICK : THIN;
